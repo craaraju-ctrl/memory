@@ -14,9 +14,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use crate::store::MemoryStore;
-use crate::types::{
-    MemoryRecord, MemoryTier, SearchResult, TierConfig, TieredRecord,
-};
+use crate::types::{MemoryRecord, MemoryTier, SearchResult, TierConfig, TieredRecord};
 
 // ── Working Memory Buffer ──────────────────────────────────────────────────
 
@@ -96,7 +94,9 @@ impl WorkingMemory {
     /// Check if working memory contains an entry (read-only, no side effects).
     pub fn peek(&self, id: &str) -> bool {
         let buffer = self.lock_buffer();
-        buffer.get(id).is_some_and(|e| e.created_at.elapsed() <= e.ttl)
+        buffer
+            .get(id)
+            .is_some_and(|e| e.created_at.elapsed() <= e.ttl)
     }
 
     /// Check if a record exists and is not expired.
@@ -190,7 +190,9 @@ impl PromotionEngine {
         for tier in MemoryTier::all() {
             configs.insert(tier, TierConfig::for_tier(tier));
         }
-        Self { tier_configs: configs }
+        Self {
+            tier_configs: configs,
+        }
     }
 
     /// Check if a record should be promoted to the next tier.
@@ -258,7 +260,12 @@ impl TieredMemory {
 
     /// Insert a record into the appropriate tier.
     /// Working memory records go to the in-memory buffer; others go to SQLite.
-    pub fn insert(&mut self, record: MemoryRecord, tier: MemoryTier, importance: f64) -> rusqlite::Result<()> {
+    pub fn insert(
+        &mut self,
+        record: MemoryRecord,
+        tier: MemoryTier,
+        importance: f64,
+    ) -> rusqlite::Result<()> {
         let ttl = self.promotion.get_config(tier).default_ttl_seconds;
 
         match tier {
@@ -267,9 +274,9 @@ impl TieredMemory {
                 self.working.insert(record, importance, ttl_duration);
                 Ok(())
             }
-            _ => {
-                self.store.insert_into_tier(&record, tier, importance, ttl, None)
-            }
+            _ => self
+                .store
+                .insert_into_tier(&record, tier, importance, ttl, None),
         }
     }
 
@@ -356,8 +363,13 @@ impl TieredMemory {
         for (record, importance, access_count) in &expired {
             // Boost importance slightly based on access count during working memory lifetime
             let adjusted_importance = (*importance + (*access_count as f64 * 0.05)).min(1.0);
-            self.store
-                .insert_into_tier(record, MemoryTier::Episodic, adjusted_importance, None, None)?;
+            self.store.insert_into_tier(
+                record,
+                MemoryTier::Episodic,
+                adjusted_importance,
+                None,
+                None,
+            )?;
             count += 1;
         }
 
@@ -371,8 +383,13 @@ impl TieredMemory {
 
         for (record, importance, access_count) in &all {
             let adjusted_importance = (*importance + (*access_count as f64 * 0.05)).min(1.0);
-            self.store
-                .insert_into_tier(record, MemoryTier::Episodic, adjusted_importance, None, None)?;
+            self.store.insert_into_tier(
+                record,
+                MemoryTier::Episodic,
+                adjusted_importance,
+                None,
+                None,
+            )?;
             count += 1;
         }
 
@@ -386,7 +403,11 @@ impl TieredMemory {
 
         for tiered in &records {
             if let Some(next_tier) = self.promotion.should_promote(tiered) {
-                if self.store.promote(&tiered.record.id, next_tier).unwrap_or(false) {
+                if self
+                    .store
+                    .promote(&tiered.record.id, next_tier)
+                    .unwrap_or(false)
+                {
                     promoted += 1;
                 }
             }
@@ -402,7 +423,11 @@ impl TieredMemory {
 
         for tiered in &records {
             if let Some(prev_tier) = self.promotion.should_demote(tiered) {
-                if self.store.promote(&tiered.record.id, prev_tier).unwrap_or(false) {
+                if self
+                    .store
+                    .promote(&tiered.record.id, prev_tier)
+                    .unwrap_or(false)
+                {
                     demoted += 1;
                 }
             }
@@ -443,9 +468,21 @@ mod tests {
     #[test]
     fn test_working_memory_lru_eviction() {
         let wm = WorkingMemory::new(2, 3600);
-        wm.insert(MemoryRecord::new("a".into(), "A".into(), "test".into()), 0.5, None);
-        wm.insert(MemoryRecord::new("b".into(), "B".into(), "test".into()), 0.5, None);
-        wm.insert(MemoryRecord::new("c".into(), "C".into(), "test".into()), 0.5, None);
+        wm.insert(
+            MemoryRecord::new("a".into(), "A".into(), "test".into()),
+            0.5,
+            None,
+        );
+        wm.insert(
+            MemoryRecord::new("b".into(), "B".into(), "test".into()),
+            0.5,
+            None,
+        );
+        wm.insert(
+            MemoryRecord::new("c".into(), "C".into(), "test".into()),
+            0.5,
+            None,
+        );
 
         assert_eq!(wm.len(), 2); // one was evicted
         assert!(!wm.contains("a")); // 'a' was oldest, evicted
@@ -456,7 +493,11 @@ mod tests {
         let config = StorageConfig::default();
         let mut tm = TieredMemory::open(&config).unwrap();
 
-        let record = MemoryRecord::new("tm1".into(), "Tiered integration test".into(), "test".into());
+        let record = MemoryRecord::new(
+            "tm1".into(),
+            "Tiered integration test".into(),
+            "test".into(),
+        );
         tm.insert(record, MemoryTier::Episodic, 0.7).unwrap();
 
         let retrieved = tm.get("tm1").unwrap().expect("Should exist");
@@ -496,13 +537,19 @@ mod tests {
         let tm = TieredMemory::open(&config).unwrap();
 
         let record = MemoryRecord::new("promo1".into(), "Promote me".into(), "test".into());
-        tm.store.insert_into_tier(&record, MemoryTier::Episodic, 0.9, None, None).unwrap();
+        tm.store
+            .insert_into_tier(&record, MemoryTier::Episodic, 0.9, None, None)
+            .unwrap();
 
         // Promote from episodic to semantic
         let promoted = tm.promote("promo1").unwrap();
         assert!(promoted);
 
-        let tiered = tm.store.get_tiered("promo1").unwrap().expect("Should exist");
+        let tiered = tm
+            .store
+            .get_tiered("promo1")
+            .unwrap()
+            .expect("Should exist");
         assert_eq!(tiered.tier, MemoryTier::Semantic);
     }
 
@@ -518,7 +565,11 @@ mod tests {
         assert_eq!(flushed, 1);
 
         // Should now be in episodic tier
-        let tiered = tm.store.get_tiered("flush1").unwrap().expect("Should exist in store");
+        let tiered = tm
+            .store
+            .get_tiered("flush1")
+            .unwrap()
+            .expect("Should exist in store");
         assert_eq!(tiered.tier, MemoryTier::Episodic);
     }
 }

@@ -35,27 +35,27 @@
 
 pub mod api;
 pub mod cache;
+pub mod client;
 pub mod consolidation;
+pub mod embed_cohere;
+pub mod embed_openai;
 pub mod errors;
 pub mod evolution;
 pub mod experts;
 pub mod graph;
-pub mod rag;
-pub mod reasoning;
-pub mod resilience;
-pub mod store;
-pub mod tiers;
-pub mod types;
-pub mod vector;
-pub mod staleness;
-pub mod client;
-pub mod embed_cohere;
-pub mod embed_openai;
 pub mod llm;
 pub mod mcp;
 pub mod metrics;
 pub mod openai_compat;
+pub mod rag;
+pub mod reasoning;
+pub mod resilience;
+pub mod staleness;
+pub mod store;
+pub mod tiers;
 pub mod tools;
+pub mod types;
+pub mod vector;
 
 pub use staleness::StalenessManager;
 
@@ -70,7 +70,7 @@ pub fn generate_id() -> String {
 pub use api::MemoryApi;
 pub use cache::{CachedItem, PolicyCache};
 pub use consolidation::{ConsolidationEngine, DefaultImportanceScorer};
-pub use evolution::{EvolutionEngine, EvolutionConfig, SleepCycleHandle, SleepCycleReport};
+pub use evolution::{EvolutionConfig, EvolutionEngine, SleepCycleHandle, SleepCycleReport};
 pub use experts::RetrievalExpert;
 pub use graph::KnowledgeGraph;
 pub use rag::{chunk_text, ChunkStrategy, DummyEmbedder, Embedder, OllamaEmbedder, RagPipeline};
@@ -83,8 +83,8 @@ pub use vector::*;
 pub use client::MemoryClient;
 pub use embed_cohere::CohereEmbedder;
 pub use embed_openai::OpenAIEmbedder;
+pub use llm::{LLMClient, LLMResponse, Message, ToolCall, ToolDefinition};
 pub use resilience::{CircuitBreaker, CircuitState, ResilientClient};
-pub use llm::{LLMClient, LLMResponse, Message, ToolDefinition, ToolCall};
 
 // Note: The old timestamp-based generate_id() was removed.
 // We now exclusively use the UUIDv7 version defined above for better sortability and collision resistance.

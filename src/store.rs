@@ -10,9 +10,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::{params, Connection};
 
 use crate::types::{
-    GraphEdge, GraphTraversalResult, MemoryRecord, MemoryStats, MemoryTier,
-    ReasoningChain, ReasoningStep, StorageConfig, TierConfig,
-    TierStats, TieredRecord,
+    GraphEdge, GraphTraversalResult, MemoryRecord, MemoryStats, MemoryTier, ReasoningChain,
+    ReasoningStep, StorageConfig, TierConfig, TierStats, TieredRecord,
 };
 
 /// Initialize the sqlite-vec extension globally via sqlite3_auto_extension.
@@ -21,12 +20,10 @@ use crate::types::{
 pub fn init_vector_search() {
     use std::sync::Once;
     static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        unsafe {
-            rusqlite::ffi::sqlite3_auto_extension(
-                Some(std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ())),
-            );
-        }
+    INIT.call_once(|| unsafe {
+        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
+            sqlite_vec::sqlite3_vec_init as *const (),
+        )));
     });
 }
 
@@ -217,7 +214,7 @@ impl MemoryStore {
                 version     INTEGER PRIMARY KEY,
                 applied_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
             );
-            "
+            ",
         )?;
 
         // Get current migration version
@@ -238,11 +235,12 @@ impl MemoryStore {
                     [],
                     |row| row.get(0),
                 )
-                .unwrap_or(0) > 0;
+                .unwrap_or(0)
+                > 0;
 
             if !has_tags {
                 conn.execute_batch(
-                    "ALTER TABLE records ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';"
+                    "ALTER TABLE records ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';",
                 )?;
             }
 
@@ -263,7 +261,7 @@ impl MemoryStore {
             "CREATE TABLE IF NOT EXISTS vector_map (
                 record_id TEXT PRIMARY KEY,
                 vec_rowid INTEGER NOT NULL
-            );"
+            );",
         )?;
 
         let dim = self.vector_dimension;
@@ -281,7 +279,10 @@ impl MemoryStore {
                 Ok(())
             }
             Err(e) => {
-                eprintln!("ℹ️  sqlite-vec not available: {} — using fallback linear scan", e);
+                eprintln!(
+                    "ℹ️  sqlite-vec not available: {} — using fallback linear scan",
+                    e
+                );
                 Ok(())
             }
         }
@@ -303,7 +304,7 @@ impl MemoryStore {
         // which also acquires the lock.
         {
             let mut conn = self.lock_db()?;
-            
+
             // Use a transaction for atomicity across records + FTS
             let tx = conn.transaction()?;
 
@@ -341,7 +342,12 @@ impl MemoryStore {
             tx.execute(
                 "INSERT OR REPLACE INTO records_fts (id, content, content_type, metadata_json)
                  VALUES (?1, ?2, ?3, ?4)",
-                params![record.id, record.content, record.content_type, metadata_json],
+                params![
+                    record.id,
+                    record.content,
+                    record.content_type,
+                    metadata_json
+                ],
             )?;
 
             // Commit the main transaction (records + FTS)
@@ -351,7 +357,10 @@ impl MemoryStore {
         // 3. Handle vector embedding with compensation for data integrity
         if let Some(ref emb) = record.embedding {
             if let Err(e) = self.store_embedding(&record.id, emb) {
-                tracing::error!("Vector embedding failed for {}. Attempting compensation delete.", record.id);
+                tracing::error!(
+                    "Vector embedding failed for {}. Attempting compensation delete.",
+                    record.id
+                );
                 let _ = self.delete(&record.id);
                 return Err(e);
             }
@@ -394,37 +403,55 @@ impl MemoryStore {
 
     pub fn delete(&self, id: &str) -> rusqlite::Result<bool> {
         let mut conn = self.lock_db()?;
-        
+
         // Wrap multi-step delete in a transaction for data integrity
         let tx = conn.transaction()?;
 
         // 1. Get vector rowid if exists
-        let rowid_opt: Option<i64> = tx.query_row(
-            "SELECT vec_rowid FROM vector_map WHERE record_id = ?1",
-            params![id],
-            |r| r.get(0),
-        ).ok();
+        let rowid_opt: Option<i64> = tx
+            .query_row(
+                "SELECT vec_rowid FROM vector_map WHERE record_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .ok();
 
         if let Some(vec_rowid) = rowid_opt {
-            let _ = tx.execute("DELETE FROM vectors_ann WHERE rowid = ?1", params![vec_rowid]);
+            let _ = tx.execute(
+                "DELETE FROM vectors_ann WHERE rowid = ?1",
+                params![vec_rowid],
+            );
             let _ = tx.execute("DELETE FROM vector_map WHERE record_id = ?1", params![id]);
         }
 
         // 2. Delete from main tables
         let deleted = tx.execute("DELETE FROM records WHERE id = ?1", params![id])?;
         let _ = tx.execute("DELETE FROM records_fts WHERE id = ?1", params![id]);
-        let _ = tx.execute("DELETE FROM graph_edges WHERE source_id = ?1 OR target_id = ?1", params![id]);
+        let _ = tx.execute(
+            "DELETE FROM graph_edges WHERE source_id = ?1 OR target_id = ?1",
+            params![id],
+        );
 
         tx.commit()?;
         Ok(deleted > 0)
     }
 
-    pub fn list_by_type(&self, content_type: &str, limit: usize, offset: usize) -> rusqlite::Result<Vec<MemoryRecord>> {
+    pub fn list_by_type(
+        &self,
+        content_type: &str,
+        limit: usize,
+        offset: usize,
+    ) -> rusqlite::Result<Vec<MemoryRecord>> {
         self.list_by_type_tiered(content_type, limit, offset)
             .map(|v| v.into_iter().map(|t| t.record).collect())
     }
 
-    pub fn list_by_type_tiered(&self, content_type: &str, limit: usize, offset: usize) -> rusqlite::Result<Vec<TieredRecord>> {
+    pub fn list_by_type_tiered(
+        &self,
+        content_type: &str,
+        limit: usize,
+        offset: usize,
+    ) -> rusqlite::Result<Vec<TieredRecord>> {
         let conn = self.lock_db()?;
         let mut stmt = conn.prepare(
             "SELECT id, content, content_type, metadata_json, embedding, timestamp,
@@ -433,7 +460,10 @@ impl MemoryStore {
              ORDER BY importance DESC, timestamp DESC LIMIT ?2 OFFSET ?3",
         )?;
 
-        let rows = stmt.query_map(params![content_type, limit as i64, offset as i64], row_to_tiered_record)?;
+        let rows = stmt.query_map(
+            params![content_type, limit as i64, offset as i64],
+            row_to_tiered_record,
+        )?;
         let mut results = Vec::new();
         for row in rows {
             results.push(row?);
@@ -441,7 +471,12 @@ impl MemoryStore {
         Ok(results)
     }
 
-    pub fn list_by_tier(&self, tier: MemoryTier, limit: usize, offset: usize) -> rusqlite::Result<Vec<TieredRecord>> {
+    pub fn list_by_tier(
+        &self,
+        tier: MemoryTier,
+        limit: usize,
+        offset: usize,
+    ) -> rusqlite::Result<Vec<TieredRecord>> {
         let conn = self.lock_db()?;
         let mut stmt = conn.prepare(
             "SELECT id, content, content_type, metadata_json, embedding, timestamp,
@@ -450,7 +485,10 @@ impl MemoryStore {
              ORDER BY importance DESC, timestamp DESC LIMIT ?2 OFFSET ?3",
         )?;
 
-        let rows = stmt.query_map(params![tier.to_string(), limit as i64, offset as i64], row_to_tiered_record)?;
+        let rows = stmt.query_map(
+            params![tier.to_string(), limit as i64, offset as i64],
+            row_to_tiered_record,
+        )?;
         let mut results = Vec::new();
         for row in rows {
             results.push(row?);
@@ -509,7 +547,11 @@ impl MemoryStore {
         Ok(updated > 0)
     }
 
-    pub fn get_eviction_candidates(&self, tier: MemoryTier, count: usize) -> rusqlite::Result<Vec<TieredRecord>> {
+    pub fn get_eviction_candidates(
+        &self,
+        tier: MemoryTier,
+        count: usize,
+    ) -> rusqlite::Result<Vec<TieredRecord>> {
         let conn = self.lock_db()?;
         let mut stmt = conn.prepare(
             "SELECT id, content, content_type, metadata_json, embedding, timestamp,
@@ -519,7 +561,10 @@ impl MemoryStore {
              LIMIT ?2",
         )?;
 
-        let rows = stmt.query_map(params![tier.to_string(), count as i64], row_to_tiered_record)?;
+        let rows = stmt.query_map(
+            params![tier.to_string(), count as i64],
+            row_to_tiered_record,
+        )?;
         let mut results = Vec::new();
         for row in rows {
             results.push(row?);
@@ -552,13 +597,20 @@ impl MemoryStore {
             params![tier_str, to_evict as i64],
         )?;
 
-        conn.execute("DELETE FROM records_fts WHERE id NOT IN (SELECT id FROM records)", [])?;
+        conn.execute(
+            "DELETE FROM records_fts WHERE id NOT IN (SELECT id FROM records)",
+            [],
+        )?;
         Ok(to_evict)
     }
 
     // ── Full-Text Search ─────────────────────────────────────────────────
 
-    pub fn search_fts(&self, query: &str, limit: usize) -> rusqlite::Result<Vec<(MemoryRecord, f64)>> {
+    pub fn search_fts(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> rusqlite::Result<Vec<(MemoryRecord, f64)>> {
         let conn = self.lock_db()?;
         let mut stmt = conn.prepare(
             "SELECT r.id, r.content, r.content_type, r.metadata_json, r.embedding, r.timestamp,
@@ -638,7 +690,11 @@ impl MemoryStore {
         Ok(self.get_tier_config_with_conn(&conn, tier))
     }
 
-    pub fn update_tier_config(&self, tier: MemoryTier, config: &TierConfig) -> rusqlite::Result<()> {
+    pub fn update_tier_config(
+        &self,
+        tier: MemoryTier,
+        config: &TierConfig,
+    ) -> rusqlite::Result<()> {
         let conn = self.lock_db()?;
         conn.execute(
             "INSERT OR REPLACE INTO tier_config
@@ -660,7 +716,13 @@ impl MemoryStore {
     //  KNOWLEDGE GRAPH OPERATIONS
     // ══════════════════════════════════════════════════════════════════════
 
-    pub fn add_edge(&self, source_id: &str, target_id: &str, relation_type: &str, weight: f64) -> rusqlite::Result<String> {
+    pub fn add_edge(
+        &self,
+        source_id: &str,
+        target_id: &str,
+        relation_type: &str,
+        weight: f64,
+    ) -> rusqlite::Result<String> {
         let conn = self.lock_db()?;
         let edge_id = format!("edge_{}", uuid_v4());
         conn.execute(
@@ -687,7 +749,12 @@ impl MemoryStore {
         Ok(results)
     }
 
-    pub fn graph_bfs(&self, start_id: &str, max_depth: u32, relation_filter: Option<&str>) -> rusqlite::Result<Vec<GraphTraversalResult>> {
+    pub fn graph_bfs(
+        &self,
+        start_id: &str,
+        max_depth: u32,
+        relation_filter: Option<&str>,
+    ) -> rusqlite::Result<Vec<GraphTraversalResult>> {
         let conn = self.lock_db()?;
 
         if max_depth == 0 {
@@ -725,7 +792,11 @@ impl MemoryStore {
             Ok(GraphTraversalResult {
                 node_id: row.get(0)?,
                 depth: row.get(1)?,
-                path: row.get::<_, String>(2)?.split(',').map(|s| s.to_string()).collect(),
+                path: row
+                    .get::<_, String>(2)?
+                    .split(',')
+                    .map(|s| s.to_string())
+                    .collect(),
                 cumulative_weight: row.get(3)?,
             })
         })?;
@@ -747,7 +818,9 @@ impl MemoryStore {
 
         let mut results = Vec::new();
         for t in &traversal {
-            if t.node_id == record_id { continue; }
+            if t.node_id == record_id {
+                continue;
+            }
             if let Some(record) = self.get(&t.node_id)? {
                 let path_str = t.path.join(" → ");
                 results.push((record, t.depth, path_str, t.cumulative_weight));
@@ -802,7 +875,11 @@ impl MemoryStore {
         }
     }
 
-    pub fn search_reasoning_chains(&self, goal_query: &str, limit: usize) -> rusqlite::Result<Vec<ReasoningChain>> {
+    pub fn search_reasoning_chains(
+        &self,
+        goal_query: &str,
+        limit: usize,
+    ) -> rusqlite::Result<Vec<ReasoningChain>> {
         let conn = self.lock_db()?;
         let pattern = format!("%{}%", goal_query);
         let mut stmt = conn.prepare(
@@ -846,7 +923,11 @@ impl MemoryStore {
         Ok(())
     }
 
-    pub fn get_opinions_by_expert(&self, expert_type: &str, limit: usize) -> rusqlite::Result<Vec<(String, String, f64, String)>> {
+    pub fn get_opinions_by_expert(
+        &self,
+        expert_type: &str,
+        limit: usize,
+    ) -> rusqlite::Result<Vec<(String, String, f64, String)>> {
         let conn = self.lock_db()?;
         let mut stmt = conn.prepare(
             "SELECT recommendation, reasoning, confidence, created_at
@@ -892,24 +973,32 @@ impl MemoryStore {
         Ok(())
     }
 
-    pub fn get_evolution_events(&self, event_type: Option<&str>, limit: usize) -> rusqlite::Result<Vec<(String, String, f64, String)>> {
+    pub fn get_evolution_events(
+        &self,
+        event_type: Option<&str>,
+        limit: usize,
+    ) -> rusqlite::Result<Vec<(String, String, f64, String)>> {
         let conn = self.lock_db()?;
-        let (sql, type_param): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(et) = event_type {
-            (
-                "SELECT event_type, description, confidence, timestamp FROM evolution_events
-                 WHERE event_type = ?1 ORDER BY timestamp DESC LIMIT ?2".to_string(),
-                vec![Box::new(et.to_string()), Box::new(limit as i64)],
-            )
-        } else {
-            (
-                "SELECT event_type, description, confidence, timestamp FROM evolution_events
-                 ORDER BY timestamp DESC LIMIT ?1".to_string(),
-                vec![Box::new(limit as i64)],
-            )
-        };
+        let (sql, type_param): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
+            if let Some(et) = event_type {
+                (
+                    "SELECT event_type, description, confidence, timestamp FROM evolution_events
+                 WHERE event_type = ?1 ORDER BY timestamp DESC LIMIT ?2"
+                        .to_string(),
+                    vec![Box::new(et.to_string()), Box::new(limit as i64)],
+                )
+            } else {
+                (
+                    "SELECT event_type, description, confidence, timestamp FROM evolution_events
+                 ORDER BY timestamp DESC LIMIT ?1"
+                        .to_string(),
+                    vec![Box::new(limit as i64)],
+                )
+            };
 
         let mut stmt = conn.prepare(&sql)?;
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> = type_param.iter().map(|b| b.as_ref()).collect();
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            type_param.iter().map(|b| b.as_ref()).collect();
         let rows = stmt.query_map(params_refs.as_slice(), |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -933,14 +1022,19 @@ impl MemoryStore {
     pub fn stats(&self) -> rusqlite::Result<MemoryStats> {
         let conn = self.lock_db()?;
 
-        let total: i64 = conn.query_row("SELECT COUNT(*) FROM records", [], |r| r.get(0)).unwrap_or(0);
+        let total: i64 = conn
+            .query_row("SELECT COUNT(*) FROM records", [], |r| r.get(0))
+            .unwrap_or(0);
         let with_embeddings: i64 = conn
-            .query_row("SELECT COUNT(*) FROM records WHERE embedding IS NOT NULL", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM records WHERE embedding IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
             .unwrap_or(0);
 
-        let mut stmt = conn.prepare(
-            "SELECT content_type, COUNT(*) FROM records GROUP BY content_type",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT content_type, COUNT(*) FROM records GROUP BY content_type")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u64))
         })?;
@@ -950,8 +1044,12 @@ impl MemoryStore {
             content_types.insert(ct, cnt);
         }
 
-        let page_count: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0)).unwrap_or(0);
-        let page_size: i64 = conn.query_row("PRAGMA page_size", [], |r| r.get(0)).unwrap_or(0);
+        let page_count: i64 = conn
+            .query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap_or(0);
+        let page_size: i64 = conn
+            .query_row("PRAGMA page_size", [], |r| r.get(0))
+            .unwrap_or(0);
 
         // Batch-fetch all tier configs in one query (avoids N+1 pattern)
         let mut all_tier_configs: HashMap<String, TierConfig> = HashMap::new();
@@ -962,13 +1060,16 @@ impl MemoryStore {
             )?;
             let cfg_rows = cfg_stmt.query_map([], |row| {
                 let tier_name: String = row.get(0)?;
-                Ok((tier_name, TierConfig {
-                    max_records: row.get(1)?,
-                    default_ttl_seconds: row.get(2)?,
-                    promotion_threshold: row.get(3)?,
-                    demotion_threshold: row.get(4)?,
-                    auto_promote: row.get::<_, i32>(5)? != 0,
-                }))
+                Ok((
+                    tier_name,
+                    TierConfig {
+                        max_records: row.get(1)?,
+                        default_ttl_seconds: row.get(2)?,
+                        promotion_threshold: row.get(3)?,
+                        demotion_threshold: row.get(4)?,
+                        auto_promote: row.get::<_, i32>(5)? != 0,
+                    },
+                ))
             })?;
             for row in cfg_rows {
                 let (name, cfg) = row?;
@@ -979,7 +1080,11 @@ impl MemoryStore {
         let mut tier_breakdown = HashMap::new();
         for tier_str in ["working", "episodic", "semantic", "procedural"] {
             let count: i64 = conn
-                .query_row("SELECT COUNT(*) FROM records WHERE tier = ?1", params![tier_str], |r| r.get(0))
+                .query_row(
+                    "SELECT COUNT(*) FROM records WHERE tier = ?1",
+                    params![tier_str],
+                    |r| r.get(0),
+                )
                 .unwrap_or(0);
             let emb: i64 = conn
                 .query_row(
@@ -1047,19 +1152,27 @@ impl MemoryStore {
             return Ok(());
         }
         let mut conn = self.lock_db()?;
-        
+
         // Wrap vector operations in a transaction
         let tx = conn.transaction()?;
 
-        let old_rowid: Option<i64> = tx.query_row(
-            "SELECT vec_rowid FROM vector_map WHERE record_id = ?1",
-            params![record_id],
-            |r| r.get::<_, i64>(0),
-        ).ok();
+        let old_rowid: Option<i64> = tx
+            .query_row(
+                "SELECT vec_rowid FROM vector_map WHERE record_id = ?1",
+                params![record_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .ok();
 
         if let Some(old_rowid) = old_rowid {
-            let _ = tx.execute("DELETE FROM vectors_ann WHERE rowid = ?1", params![old_rowid]);
-            let _ = tx.execute("DELETE FROM vector_map WHERE record_id = ?1", params![record_id]);
+            let _ = tx.execute(
+                "DELETE FROM vectors_ann WHERE rowid = ?1",
+                params![old_rowid],
+            );
+            let _ = tx.execute(
+                "DELETE FROM vector_map WHERE record_id = ?1",
+                params![record_id],
+            );
         }
 
         let f32_bytes: Vec<u8> = embedding
@@ -1084,7 +1197,11 @@ impl MemoryStore {
         Ok(())
     }
 
-    pub fn search_vectors(&self, query: &[f64], k: usize) -> rusqlite::Result<Vec<(MemoryRecord, f32)>> {
+    pub fn search_vectors(
+        &self,
+        query: &[f64],
+        k: usize,
+    ) -> rusqlite::Result<Vec<(MemoryRecord, f32)>> {
         if !self.vector_search_enabled.load(Ordering::Relaxed) {
             return Ok(Vec::new());
         }
@@ -1156,7 +1273,11 @@ impl MemoryStore {
 
         reranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        Ok(reranked.into_iter().take(k).map(|(_, rec, dist)| (rec, dist)).collect())
+        Ok(reranked
+            .into_iter()
+            .take(k)
+            .map(|(_, rec, dist)| (rec, dist))
+            .collect())
     }
 
     pub fn clear(&self) -> rusqlite::Result<()> {
@@ -1188,7 +1309,9 @@ fn blob_to_f64_vec(blob: Vec<u8>) -> Option<Vec<f64>> {
     Some(
         blob.chunks_exact(8)
             .map(|chunk| {
-                let arr: [u8; 8] = chunk.try_into().expect("chunks_exact(8) guarantees 8 bytes");
+                let arr: [u8; 8] = chunk
+                    .try_into()
+                    .expect("chunks_exact(8) guarantees 8 bytes");
                 f64::from_le_bytes(arr)
             })
             .collect(),
@@ -1220,7 +1343,9 @@ fn row_to_tiered_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<TieredRecor
     let metadata = serde_json::from_str(&metadata_json).unwrap_or_default();
 
     let tier_str: String = row.get(6)?;
-    let tier = tier_str.parse::<MemoryTier>().unwrap_or(MemoryTier::Episodic);
+    let tier = tier_str
+        .parse::<MemoryTier>()
+        .unwrap_or(MemoryTier::Episodic);
 
     Ok(TieredRecord {
         record: MemoryRecord {
@@ -1240,15 +1365,13 @@ fn row_to_tiered_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<TieredRecor
         tags: {
             // Robust tag deserialization with logging on failure
             match row.get::<_, Option<String>>(12) {
-                Ok(Some(json)) if !json.is_empty() => {
-                    match serde_json::from_str(&json) {
-                        Ok(tags) => tags,
-                        Err(e) => {
-                            tracing::warn!("Failed to deserialize tags_json for record: {}", e);
-                            vec![]
-                        }
+                Ok(Some(json)) if !json.is_empty() => match serde_json::from_str(&json) {
+                    Ok(tags) => tags,
+                    Err(e) => {
+                        tracing::warn!("Failed to deserialize tags_json for record: {}", e);
+                        vec![]
                     }
-                }
+                },
                 _ => vec![],
             }
         },
@@ -1296,7 +1419,9 @@ fn row_to_reasoning_chain(row: &rusqlite::Row<'_>) -> rusqlite::Result<Reasoning
 
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!(
         "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
         now.as_secs(),
@@ -1315,9 +1440,15 @@ mod tests {
     fn test_tier_insert_and_get() {
         let config = StorageConfig::default();
         let store = MemoryStore::open(&config).unwrap();
-        let record = MemoryRecord::new("tier-test-1".into(), "Tiered content".into(), "test".into());
-        store.insert_into_tier(&record, MemoryTier::Working, 0.8, Some(3600), None).unwrap();
-        let tiered = store.get_tiered("tier-test-1").unwrap().expect("Should exist");
+        let record =
+            MemoryRecord::new("tier-test-1".into(), "Tiered content".into(), "test".into());
+        store
+            .insert_into_tier(&record, MemoryTier::Working, 0.8, Some(3600), None)
+            .unwrap();
+        let tiered = store
+            .get_tiered("tier-test-1")
+            .unwrap()
+            .expect("Should exist");
         assert_eq!(tiered.tier, MemoryTier::Working);
         assert!((tiered.importance - 0.8).abs() < 0.001);
         assert_eq!(tiered.ttl_seconds, Some(3600));
@@ -1328,12 +1459,24 @@ mod tests {
         let config = StorageConfig::default();
         let store = MemoryStore::open(&config).unwrap();
         for i in 0..3 {
-            let r = MemoryRecord::new(format!("e{}", i), format!("Episodic {}", i), "tier_test".into());
-            store.insert_into_tier(&r, MemoryTier::Episodic, 0.5, None, None).unwrap();
+            let r = MemoryRecord::new(
+                format!("e{}", i),
+                format!("Episodic {}", i),
+                "tier_test".into(),
+            );
+            store
+                .insert_into_tier(&r, MemoryTier::Episodic, 0.5, None, None)
+                .unwrap();
         }
         for i in 0..2 {
-            let r = MemoryRecord::new(format!("s{}", i), format!("Semantic {}", i), "tier_test".into());
-            store.insert_into_tier(&r, MemoryTier::Semantic, 0.9, None, None).unwrap();
+            let r = MemoryRecord::new(
+                format!("s{}", i),
+                format!("Semantic {}", i),
+                "tier_test".into(),
+            );
+            store
+                .insert_into_tier(&r, MemoryTier::Semantic, 0.9, None, None)
+                .unwrap();
         }
         let episodic = store.list_by_tier(MemoryTier::Episodic, 10, 0).unwrap();
         assert_eq!(episodic.len(), 3);
@@ -1384,7 +1527,10 @@ mod tests {
             duration_ms: 1500,
         };
         store.store_reasoning_chain(&chain).unwrap();
-        let retrieved = store.get_reasoning_chain("chain-1").unwrap().expect("Should exist");
+        let retrieved = store
+            .get_reasoning_chain("chain-1")
+            .unwrap()
+            .expect("Should exist");
         assert_eq!(retrieved.goal, "Analyze market trend");
         assert_eq!(retrieved.steps.len(), 1);
         assert_eq!(retrieved.tags.len(), 2);
@@ -1395,8 +1541,14 @@ mod tests {
         let config = StorageConfig::default();
         let store = MemoryStore::open(&config).unwrap();
         for i in 0..5 {
-            let r = MemoryRecord::new(format!("evict{}", i), format!("Low importance {}", i), "evict".into());
-            store.insert_into_tier(&r, MemoryTier::Episodic, 0.1 * (i as f64), None, None).unwrap();
+            let r = MemoryRecord::new(
+                format!("evict{}", i),
+                format!("Low importance {}", i),
+                "evict".into(),
+            );
+            store
+                .insert_into_tier(&r, MemoryTier::Episodic, 0.1 * (i as f64), None, None)
+                .unwrap();
         }
         let evicted = store.evict_from_tier(MemoryTier::Episodic, 3).unwrap();
         assert_eq!(evicted, 2);
@@ -1409,7 +1561,9 @@ mod tests {
         let config = StorageConfig::default();
         let store = MemoryStore::open(&config).unwrap();
         let r = MemoryRecord::new("s1".into(), "Stats test".into(), "stats_test".into());
-        store.insert_into_tier(&r, MemoryTier::Working, 0.5, Some(60), None).unwrap();
+        store
+            .insert_into_tier(&r, MemoryTier::Working, 0.5, Some(60), None)
+            .unwrap();
         let stats = store.stats().unwrap();
         assert!(stats.total_records >= 1);
         assert!(stats.tier_breakdown.contains_key("working"));
@@ -1419,12 +1573,26 @@ mod tests {
     fn test_full_text_search() {
         let config = StorageConfig::default();
         let store = MemoryStore::open(&config).unwrap();
-        store.insert(&MemoryRecord::new("fts1".into(), "Bitcoin hits all time high".into(), "news".into())).unwrap();
-        store.insert(&MemoryRecord::new("fts2".into(), "Ethereum merge completed".into(), "news".into())).unwrap();
+        store
+            .insert(&MemoryRecord::new(
+                "fts1".into(),
+                "Bitcoin hits all time high".into(),
+                "news".into(),
+            ))
+            .unwrap();
+        store
+            .insert(&MemoryRecord::new(
+                "fts2".into(),
+                "Ethereum merge completed".into(),
+                "news".into(),
+            ))
+            .unwrap();
         let results = store.search_fts("bitcoin", 10).unwrap();
         assert!(!results.is_empty());
         assert!(results.iter().any(|(r, _)| r.id == "fts1"));
-        let tier_results = store.search_fts_in_tier("bitcoin", MemoryTier::Episodic, 10).unwrap();
+        let tier_results = store
+            .search_fts_in_tier("bitcoin", MemoryTier::Episodic, 10)
+            .unwrap();
         assert!(!tier_results.is_empty());
     }
 }

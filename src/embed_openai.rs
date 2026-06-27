@@ -61,8 +61,8 @@ impl OpenAIEmbedder {
 
     /// Create from environment variables (OPENAI_API_KEY, OPENAI_BASE_URL).
     pub fn from_env() -> Result<Self, String> {
-        let api_key = std::env::var("OPENAI_API_KEY")
-            .map_err(|_| "OPENAI_API_KEY not set".to_string())?;
+        let api_key =
+            std::env::var("OPENAI_API_KEY").map_err(|_| "OPENAI_API_KEY not set".to_string())?;
         let base_url = std::env::var("OPENAI_BASE_URL")
             .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
         let model = std::env::var("OPENAI_EMBED_MODEL")
@@ -78,7 +78,8 @@ impl OpenAIEmbedder {
             "input": text,
         });
 
-        let json: serde_json::Value = self.client
+        let json: serde_json::Value = self
+            .client
             .post_json_with_headers(
                 &url,
                 &body,
@@ -118,7 +119,8 @@ impl super::Embedder for OpenAIEmbedder {
             "input": texts,
         });
 
-        let json: serde_json::Value = self.client
+        let json: serde_json::Value = self
+            .client
             .post_json_with_headers(
                 &url,
                 &body,

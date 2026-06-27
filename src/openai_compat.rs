@@ -23,9 +23,9 @@
 //! export OPENAI_API_KEY=memory-api
 //! ```
 
-use axum::{extract::State, http::StatusCode, Json, response::IntoResponse};
-use serde::{Deserialize, Serialize};
 use crate::rag::Embedder;
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use serde::{Deserialize, Serialize};
 
 /// OpenAI-compatible chat completion request.
 #[derive(Debug, Deserialize)]
@@ -163,9 +163,10 @@ pub async fn chat_completions(
     );
 
     let search_results = match client.get(&search_url).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            resp.json::<Vec<serde_json::Value>>().await.unwrap_or_default()
-        }
+        Ok(resp) if resp.status().is_success() => resp
+            .json::<Vec<serde_json::Value>>()
+            .await
+            .unwrap_or_default(),
         _ => vec![],
     };
 
@@ -240,13 +241,15 @@ pub async fn embeddings(
 
     let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
     let data: Vec<EmbeddingData> = match embedder.embed_batch(&text_refs).await {
-        Ok(embeddings) => {
-            embeddings.into_iter().enumerate().map(|(i, emb)| EmbeddingData {
+        Ok(embeddings) => embeddings
+            .into_iter()
+            .enumerate()
+            .map(|(i, emb)| EmbeddingData {
                 object: "embedding".to_string(),
                 index: i as u32,
                 embedding: emb,
-            }).collect()
-        }
+            })
+            .collect(),
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -299,18 +302,13 @@ pub async fn list_models() -> impl IntoResponse {
 }
 
 /// GET /v1/health — Health check.
-pub async fn health_check(
-    State(state): State<OpenAICompatState>,
-) -> impl IntoResponse {
+pub async fn health_check(State(state): State<OpenAICompatState>) -> impl IntoResponse {
     let client = reqwest::Client::new();
-    let health = match client
-        .get(format!("{}/health", state.api_url))
-        .send()
-        .await
-    {
-        Ok(resp) if resp.status().is_success() => {
-            resp.json::<serde_json::Value>().await.unwrap_or(serde_json::json!({}))
-        }
+    let health = match client.get(format!("{}/health", state.api_url)).send().await {
+        Ok(resp) if resp.status().is_success() => resp
+            .json::<serde_json::Value>()
+            .await
+            .unwrap_or(serde_json::json!({})),
         _ => serde_json::json!({"status": "unreachable"}),
     };
 

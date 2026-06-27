@@ -107,8 +107,7 @@ impl ResilientClient {
             .build()
             .expect("Failed to build reqwest client");
 
-        let retry_policy = ExponentialBackoff::builder()
-            .build_with_max_retries(max_retries);
+        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(max_retries);
 
         let client = ClientBuilder::new(reqwest_client)
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
@@ -175,7 +174,9 @@ impl ResilientClient {
             return Err("Circuit breaker is OPEN. Service temporarily unavailable.".to_string());
         }
 
-        let result = self.client.post(url)
+        let result = self
+            .client
+            .post(url)
             .header("Content-Type", "application/json")
             .body(serde_json::to_string(body).unwrap_or_default())
             .send()

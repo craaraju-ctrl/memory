@@ -94,7 +94,9 @@ pub fn get_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "memory_search".to_string(),
-            description: "Search memories by text query. Returns matching records with relevance scores.".to_string(),
+            description:
+                "Search memories by text query. Returns matching records with relevance scores."
+                    .to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -162,7 +164,8 @@ pub fn get_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "memory_promote".to_string(),
-            description: "Promote a memory to a different tier (e.g., episodic → semantic).".to_string(),
+            description: "Promote a memory to a different tier (e.g., episodic → semantic)."
+                .to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -210,10 +213,7 @@ pub fn get_tools() -> Vec<McpTool> {
 }
 
 /// Execute an MCP tool call against the Memory API.
-pub async fn execute_tool(
-    call: &McpToolCall,
-    api_url: &str,
-) -> McpToolResult {
+pub async fn execute_tool(call: &McpToolCall, api_url: &str) -> McpToolResult {
     let client = reqwest::Client::new();
     let base = api_url.trim_end_matches('/');
 
@@ -259,9 +259,20 @@ pub async fn execute_tool(
             let tier = call.arguments["tier"].as_str();
 
             let url = if let Some(t) = tier {
-                format!("{}/search?q={}&tier={}&limit={}", base, urlencoding::encode(query), t, limit)
+                format!(
+                    "{}/search?q={}&tier={}&limit={}",
+                    base,
+                    urlencoding::encode(query),
+                    t,
+                    limit
+                )
             } else {
-                format!("{}/search?q={}&limit={}", base, urlencoding::encode(query), limit)
+                format!(
+                    "{}/search?q={}&limit={}",
+                    base,
+                    urlencoding::encode(query),
+                    limit
+                )
             };
 
             match client.get(&url).send().await {
@@ -286,7 +297,13 @@ pub async fn execute_tool(
                                                 .or_else(|| r["content"].as_str())
                                                 .unwrap_or("");
                                             let score = r["score"].as_f64().unwrap_or(0.0);
-                                            format!("{}. [{}] (score: {:.2}) {}", i + 1, id, score, content)
+                                            format!(
+                                                "{}. [{}] (score: {:.2}) {}",
+                                                i + 1,
+                                                id,
+                                                score,
+                                                content
+                                            )
                                         })
                                         .collect();
                                     Ok(formatted.join("\n"))
@@ -338,39 +355,35 @@ pub async fn execute_tool(
             }
         }
 
-        "memory_stats" => {
-            match client.get(format!("{}/stats", base)).send().await {
-                Ok(resp) => {
-                    let status = resp.status();
-                    if status.is_success() {
-                        match resp.json::<serde_json::Value>().await {
-                            Ok(json) => Ok(serde_json::to_string_pretty(&json).unwrap_or_default()),
-                            Err(e) => Err(format!("Parse error: {}", e)),
-                        }
-                    } else {
-                        Err(format!("HTTP {}: stats failed", status))
+        "memory_stats" => match client.get(format!("{}/stats", base)).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    match resp.json::<serde_json::Value>().await {
+                        Ok(json) => Ok(serde_json::to_string_pretty(&json).unwrap_or_default()),
+                        Err(e) => Err(format!("Parse error: {}", e)),
                     }
+                } else {
+                    Err(format!("HTTP {}: stats failed", status))
                 }
-                Err(e) => Err(format!("Request failed: {}", e)),
             }
-        }
+            Err(e) => Err(format!("Request failed: {}", e)),
+        },
 
-        "memory_health" => {
-            match client.get(format!("{}/health", base)).send().await {
-                Ok(resp) => {
-                    let status = resp.status();
-                    if status.is_success() {
-                        match resp.json::<serde_json::Value>().await {
-                            Ok(json) => Ok(serde_json::to_string_pretty(&json).unwrap_or_default()),
-                            Err(e) => Err(format!("Parse error: {}", e)),
-                        }
-                    } else {
-                        Err(format!("HTTP {}: health check failed", status))
+        "memory_health" => match client.get(format!("{}/health", base)).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    match resp.json::<serde_json::Value>().await {
+                        Ok(json) => Ok(serde_json::to_string_pretty(&json).unwrap_or_default()),
+                        Err(e) => Err(format!("Parse error: {}", e)),
                     }
+                } else {
+                    Err(format!("HTTP {}: health check failed", status))
                 }
-                Err(e) => Err(format!("Request failed: {}", e)),
             }
-        }
+            Err(e) => Err(format!("Request failed: {}", e)),
+        },
 
         "memory_promote" => {
             let id = call.arguments["id"].as_str().unwrap_or("");
@@ -394,7 +407,9 @@ pub async fn execute_tool(
         "memory_add_edge" => {
             let source = call.arguments["source_id"].as_str().unwrap_or("");
             let target = call.arguments["target_id"].as_str().unwrap_or("");
-            let relation = call.arguments["relation_type"].as_str().unwrap_or("related_to");
+            let relation = call.arguments["relation_type"]
+                .as_str()
+                .unwrap_or("related_to");
             let weight = call.arguments["weight"].as_f64().unwrap_or(1.0);
 
             let body = serde_json::json!({
@@ -412,7 +427,10 @@ pub async fn execute_tool(
             {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        Ok(format!("Edge created: {} --[{}]--> {}", source, relation, target))
+                        Ok(format!(
+                            "Edge created: {} --[{}]--> {}",
+                            source, relation, target
+                        ))
                     } else {
                         Err(format!("Edge creation failed (status {})", resp.status()))
                     }

@@ -147,14 +147,22 @@ impl ConsolidationEngine {
         }
 
         // Phase 2: Promote high-importance records
-        for tier in &[MemoryTier::Working, MemoryTier::Episodic, MemoryTier::Semantic] {
+        for tier in &[
+            MemoryTier::Working,
+            MemoryTier::Episodic,
+            MemoryTier::Semantic,
+        ] {
             if let Ok(config) = self.store.get_tier_config(*tier) {
                 if config.auto_promote {
                     if let Ok(records) = self.store.list_by_tier(*tier, 1000, 0) {
                         for tiered in &records {
                             if tiered.importance >= config.promotion_threshold {
                                 if let Some(next_tier) = tiered.tier.promote_to() {
-                                    if self.store.promote(&tiered.record.id, next_tier).unwrap_or(false) {
+                                    if self
+                                        .store
+                                        .promote(&tiered.record.id, next_tier)
+                                        .unwrap_or(false)
+                                    {
                                         report.records_promoted += 1;
                                     }
                                 }
@@ -166,13 +174,21 @@ impl ConsolidationEngine {
         }
 
         // Phase 3: Demote low-importance records
-        for tier in &[MemoryTier::Procedural, MemoryTier::Semantic, MemoryTier::Episodic] {
+        for tier in &[
+            MemoryTier::Procedural,
+            MemoryTier::Semantic,
+            MemoryTier::Episodic,
+        ] {
             if let Ok(config) = self.store.get_tier_config(*tier) {
                 if let Ok(records) = self.store.list_by_tier(*tier, 1000, 0) {
                     for tiered in &records {
                         if tiered.importance < config.demotion_threshold {
                             if let Some(prev_tier) = tiered.tier.demote_to() {
-                                if self.store.promote(&tiered.record.id, prev_tier).unwrap_or(false) {
+                                if self
+                                    .store
+                                    .promote(&tiered.record.id, prev_tier)
+                                    .unwrap_or(false)
+                                {
                                     report.records_demoted += 1;
                                 }
                             }
@@ -249,8 +265,16 @@ impl ConsolidationEngine {
 
     /// Simple content similarity: ratio of shared words (Jaccard-like).
     fn content_similarity(&self, a: &str, b: &str) -> f64 {
-        let words_a: Vec<String> = a.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
-        let words_b: Vec<String> = b.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
+        let words_a: Vec<String> = a
+            .to_lowercase()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+        let words_b: Vec<String> = b
+            .to_lowercase()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
 
         if words_a.is_empty() && words_b.is_empty() {
             return 1.0;
@@ -269,7 +293,11 @@ impl ConsolidationEngine {
     }
 
     /// Merge two memory records (keeping higher importance fields).
-    pub fn merge_records(&self, keep_id: &str, merge_id: &str) -> rusqlite::Result<Option<MemoryRecord>> {
+    pub fn merge_records(
+        &self,
+        keep_id: &str,
+        merge_id: &str,
+    ) -> rusqlite::Result<Option<MemoryRecord>> {
         let keep = self.store.get(keep_id)?;
         let merge = self.store.get(merge_id)?;
 
@@ -282,7 +310,9 @@ impl ConsolidationEngine {
 
                 // Merge metadata
                 for (key, value) in &m.metadata {
-                    k.metadata.entry(key.clone()).or_insert_with(|| value.clone());
+                    k.metadata
+                        .entry(key.clone())
+                        .or_insert_with(|| value.clone());
                 }
 
                 // Take the earlier timestamp
@@ -303,7 +333,10 @@ impl ConsolidationEngine {
     }
 
     /// Detect potential conflicts — records of same type with contradictory content.
-    pub fn detect_conflicts(&self, content_type: &str) -> rusqlite::Result<Vec<(MemoryRecord, MemoryRecord)>> {
+    pub fn detect_conflicts(
+        &self,
+        content_type: &str,
+    ) -> rusqlite::Result<Vec<(MemoryRecord, MemoryRecord)>> {
         let records = self.store.list_by_type(content_type, 1000, 0)?;
         let mut conflicts = Vec::new();
 
@@ -316,8 +349,12 @@ impl ConsolidationEngine {
                 let a_lower = a.content.to_lowercase();
                 let b_lower = b.content.to_lowercase();
 
-                let has_negation_a = a_lower.contains("not ") || a_lower.contains("never ") || a_lower.contains("no ");
-                let has_negation_b = b_lower.contains("not ") || b_lower.contains("never ") || b_lower.contains("no ");
+                let has_negation_a = a_lower.contains("not ")
+                    || a_lower.contains("never ")
+                    || a_lower.contains("no ");
+                let has_negation_b = b_lower.contains("not ")
+                    || b_lower.contains("never ")
+                    || b_lower.contains("no ");
 
                 if has_negation_a != has_negation_b {
                     // Check if they share key terms (potential conflict)
@@ -341,7 +378,9 @@ impl ConsolidationEngine {
 /// Simple UUID without external dependency.
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!(
         "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
         now.as_secs(),
@@ -393,10 +432,8 @@ mod tests {
         );
         assert!(sim > 0.5);
 
-        let diff = engine.content_similarity(
-            "Bitcoin reaches all time high",
-            "Ethereum merge completed",
-        );
+        let diff =
+            engine.content_similarity("Bitcoin reaches all time high", "Ethereum merge completed");
         assert!(diff < 0.3);
     }
 
@@ -404,8 +441,20 @@ mod tests {
     fn test_detect_conflicts() {
         let (store, engine) = setup();
 
-        store.insert(&MemoryRecord::new("c1".into(), "The market is bullish".into(), "opinion".into())).unwrap();
-        store.insert(&MemoryRecord::new("c2".into(), "The market is not bullish".into(), "opinion".into())).unwrap();
+        store
+            .insert(&MemoryRecord::new(
+                "c1".into(),
+                "The market is bullish".into(),
+                "opinion".into(),
+            ))
+            .unwrap();
+        store
+            .insert(&MemoryRecord::new(
+                "c2".into(),
+                "The market is not bullish".into(),
+                "opinion".into(),
+            ))
+            .unwrap();
 
         let conflicts = engine.detect_conflicts("opinion").unwrap();
         assert!(!conflicts.is_empty());
@@ -417,8 +466,14 @@ mod tests {
 
         // Insert some records
         for i in 0..5 {
-            let r = MemoryRecord::new(format!("cyc{}", i), format!("Record {} content here for testing", i), "cycle_test".into());
-            store.insert_into_tier(&r, MemoryTier::Episodic, 0.5, None, None).unwrap();
+            let r = MemoryRecord::new(
+                format!("cyc{}", i),
+                format!("Record {} content here for testing", i),
+                "cycle_test".into(),
+            );
+            store
+                .insert_into_tier(&r, MemoryTier::Episodic, 0.5, None, None)
+                .unwrap();
         }
 
         let report = engine.run_cycle();

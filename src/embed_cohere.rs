@@ -55,8 +55,8 @@ impl CohereEmbedder {
 
     /// Create from environment variables (COHERE_API_KEY).
     pub fn from_env() -> Result<Self, String> {
-        let api_key = std::env::var("COHERE_API_KEY")
-            .map_err(|_| "COHERE_API_KEY not set".to_string())?;
+        let api_key =
+            std::env::var("COHERE_API_KEY").map_err(|_| "COHERE_API_KEY not set".to_string())?;
         let model = std::env::var("COHERE_EMBED_MODEL")
             .unwrap_or_else(|_| "embed-english-v3.0".to_string());
         Self::new(&model, &api_key)
@@ -70,7 +70,8 @@ impl CohereEmbedder {
             "embedding_types": ["float"],
         });
 
-        let json: serde_json::Value = self.client
+        let json: serde_json::Value = self
+            .client
             .post_json_with_headers(
                 "https://api.cohere.com/v2/embed",
                 &body,
@@ -107,7 +108,8 @@ impl super::Embedder for CohereEmbedder {
             "embedding_types": ["float"],
         });
 
-        let json: serde_json::Value = self.client
+        let json: serde_json::Value = self
+            .client
             .post_json_with_headers(
                 "https://api.cohere.com/v2/embed",
                 &body,

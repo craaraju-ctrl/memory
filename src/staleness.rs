@@ -1,8 +1,8 @@
 //! Staleness Management System
 //! Prevents outdated memories from dominating retrieval results through temporal decay.
 
-use chrono::{DateTime, Utc};
 use crate::types::TieredRecord;
+use chrono::{DateTime, Utc};
 
 /// Configuration for staleness behavior
 #[derive(Debug, Clone)]
@@ -63,7 +63,12 @@ impl StalenessManager {
         self.effective_score(record) < self.config.validation_threshold
     }
 
-    pub fn apply_update(&self, record: &mut TieredRecord, new_importance: f64, new_timestamp: Option<String>) {
+    pub fn apply_update(
+        &self,
+        record: &mut TieredRecord,
+        new_importance: f64,
+        new_timestamp: Option<String>,
+    ) {
         record.importance = (record.importance * 0.55 + new_importance * 0.45).clamp(0.1, 1.0);
         if let Some(ts) = new_timestamp {
             record.record.timestamp = ts;

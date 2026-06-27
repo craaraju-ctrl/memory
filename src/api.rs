@@ -59,12 +59,7 @@ async fn logging_middleware(
     let elapsed_ms = elapsed.as_millis();
 
     // Record Prometheus metrics
-    crate::metrics::record_http_request(
-        method.as_str(),
-        uri.path(),
-        status.as_u16(),
-        elapsed_ms,
-    );
+    crate::metrics::record_http_request(method.as_str(), uri.path(), status.as_u16(), elapsed_ms);
 
     tracing::info!("{} {} {} {:?}", method, uri, status, elapsed);
     resp
@@ -194,7 +189,9 @@ async fn insert_record(
 
     let importance = body.importance.unwrap_or(0.5);
 
-    let timestamp = body.timestamp.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+    let timestamp = body
+        .timestamp
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
     let record = MemoryRecord {
         id: body.id,
         content: body.content,
@@ -205,7 +202,8 @@ async fn insert_record(
     };
 
     let mut tiered = state.tiered.write().await;
-    tiered.insert(record.clone(), tier, importance)
+    tiered
+        .insert(record.clone(), tier, importance)
         .map_err(|e| AppError::Internal(format!("Insert failed: {}", e)))?;
 
     Ok((
@@ -268,15 +266,18 @@ async fn search_records(
 
     let results = if let Some(tier_str) = &query.tier {
         if let Ok(tier) = tier_str.parse::<MemoryTier>() {
-            state.store.search_fts_in_tier(&query.q, tier, limit).map(|r| {
-                r.into_iter()
-                    .map(|(record, rank)| SearchResult {
-                        record,
-                        score: (1.0 / (1.0 + rank.abs())).clamp(0.0, 1.0),
-                        method: "fts".into(),
-                    })
-                    .collect::<Vec<SearchResult>>()
-            })
+            state
+                .store
+                .search_fts_in_tier(&query.q, tier, limit)
+                .map(|r| {
+                    r.into_iter()
+                        .map(|(record, rank)| SearchResult {
+                            record,
+                            score: (1.0 / (1.0 + rank.abs())).clamp(0.0, 1.0),
+                            method: "fts".into(),
+                        })
+                        .collect::<Vec<SearchResult>>()
+                })
         } else {
             Err(rusqlite::Error::InvalidParameterName(tier_str.clone()))
         }
@@ -310,29 +311,43 @@ async fn search_semantic(
                 .into_iter()
                 .map(|(record, distance)| {
                     let score = ((2.0 - distance as f64) / 2.0).clamp(0.0, 1.0);
-                    SearchResult { record, score, method: "sqlite-vec".into() }
+                    SearchResult {
+                        record,
+                        score,
+                        method: "sqlite-vec".into(),
+                    }
                 })
                 .collect();
             Ok((AxumStatus::OK, Json(search_results)))
         }
-        Err(_e) => {
-            match state.store.all_with_embeddings() {
-                Ok(records) => {
-                    let mut scored: Vec<SearchResult> = records
-                        .into_iter()
-                        .filter_map(|record| {
-                            let emb = record.embedding.as_ref()?;
-                            let score = (crate::vector::cosine_similarity(&body.query_vec, emb) + 1.0) / 2.0;
-                            Some(SearchResult { record, score, method: "semantic".into() })
+        Err(_e) => match state.store.all_with_embeddings() {
+            Ok(records) => {
+                let mut scored: Vec<SearchResult> = records
+                    .into_iter()
+                    .filter_map(|record| {
+                        let emb = record.embedding.as_ref()?;
+                        let score =
+                            (crate::vector::cosine_similarity(&body.query_vec, emb) + 1.0) / 2.0;
+                        Some(SearchResult {
+                            record,
+                            score,
+                            method: "semantic".into(),
                         })
-                        .collect();
-                    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-                    scored.truncate(k);
-                    Ok((AxumStatus::OK, Json(scored)))
-                }
-                Err(e2) => Err(AppError::Internal(format!("Semantic search failed: {}", e2))),
+                    })
+                    .collect();
+                scored.sort_by(|a, b| {
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                scored.truncate(k);
+                Ok((AxumStatus::OK, Json(scored)))
             }
-        }
+            Err(e2) => Err(AppError::Internal(format!(
+                "Semantic search failed: {}",
+                e2
+            ))),
+        },
     }
 }
 
@@ -348,7 +363,8 @@ async fn embed_text(
         Some(e) => e,
         None => {
             return Err(AppError::Internal(
-                "No embedder configured. Set OLLAMA_BASE_URL and OLLAMA_MODEL env vars.".to_string(),
+                "No embedder configured. Set OLLAMA_BASE_URL and OLLAMA_MODEL env vars."
+                    .to_string(),
             ));
         }
     };
@@ -359,7 +375,11 @@ async fn embed_text(
             let model = body.model.unwrap_or_else(|| "default".to_string());
             Ok((
                 AxumStatus::OK,
-                Json(EmbedResponse { embedding, dimension: dim, model }),
+                Json(EmbedResponse {
+                    embedding,
+                    dimension: dim,
+                    model,
+                }),
             ))
         }
         Err(e) => Err(AppError::Internal(format!("Embedding failed: {}", e))),
@@ -375,7 +395,8 @@ async fn list_by_tier(
     Path(tier_str): Path<String>,
     Query(query): Query<ListQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let tier = tier_str.parse::<MemoryTier>()
+    let tier = tier_str
+        .parse::<MemoryTier>()
         .map_err(AppError::BadRequest)?;
 
     let limit = query.limit.unwrap_or(50).min(1000);
@@ -391,7 +412,8 @@ async fn promote_record(
     State(state): State<ApiState>,
     Path((id, target_tier)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let tier = target_tier.parse::<MemoryTier>()
+    let tier = target_tier
+        .parse::<MemoryTier>()
         .map_err(AppError::BadRequest)?;
 
     match state.store.promote(&id, tier) {
@@ -404,13 +426,14 @@ async fn promote_record(
     }
 }
 
-async fn flush_working(
-    State(state): State<ApiState>,
-) -> Result<impl IntoResponse, AppError> {
+async fn flush_working(State(state): State<ApiState>) -> Result<impl IntoResponse, AppError> {
     let mut tiered = state.tiered.write().await;
     match tiered.flush_all_working() {
         Ok(count) => Ok((AxumStatus::OK, Json(serde_json::json!({"flushed": count})))),
-        Err(e) => Err(AppError::Database(format!("Failed to flush working memory: {}", e))),
+        Err(e) => Err(AppError::Database(format!(
+            "Failed to flush working memory: {}",
+            e
+        ))),
     }
 }
 
@@ -418,12 +441,17 @@ async fn run_auto_promotion(
     State(state): State<ApiState>,
     Path(tier_str): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let tier = tier_str.parse::<MemoryTier>()
+    let tier = tier_str
+        .parse::<MemoryTier>()
         .map_err(AppError::BadRequest)?;
     let tiered = state.tiered.read().await;
-    let count = tiered.run_auto_promotion(tier)
+    let count = tiered
+        .run_auto_promotion(tier)
         .map_err(|e| AppError::Database(format!("Failed: {}", e)))?;
-    Ok((AxumStatus::OK, Json(serde_json::json!({"auto_promoted": count, "tier": tier.to_string()}))))
+    Ok((
+        AxumStatus::OK,
+        Json(serde_json::json!({"auto_promoted": count, "tier": tier.to_string()})),
+    ))
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -435,12 +463,20 @@ async fn add_graph_edge(
     Json(body): Json<AddEdgeBody>,
 ) -> Result<impl IntoResponse, AppError> {
     let weight = body.weight.unwrap_or(1.0);
-    match state.graph.add_edge(&body.source_id, &body.target_id, &body.relation_type, weight) {
+    match state.graph.add_edge(
+        &body.source_id,
+        &body.target_id,
+        &body.relation_type,
+        weight,
+    ) {
         Ok(edge_id) => Ok((
             AxumStatus::CREATED,
             Json(serde_json::json!({"edge_id": edge_id})),
         )),
-        Err(e) => Err(AppError::Database(format!("Failed to add graph edge: {}", e))),
+        Err(e) => Err(AppError::Database(format!(
+            "Failed to add graph edge: {}",
+            e
+        ))),
     }
 }
 
@@ -459,7 +495,9 @@ async fn bfs_graph(
     Json(body): Json<BfsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let max_depth = body.max_depth.unwrap_or(3);
-    let results = state.graph.bfs(&body.start_id, max_depth, body.relation_type.as_deref())
+    let results = state
+        .graph
+        .bfs(&body.start_id, max_depth, body.relation_type.as_deref())
         .map_err(|e| AppError::Internal(format!("BFS failed: {}", e)))?;
     Ok((AxumStatus::OK, Json(results)))
 }
@@ -504,7 +542,10 @@ async fn get_reasoning_chain(
 ) -> Result<impl IntoResponse, AppError> {
     match state.reasoning.get_chain(&chain_id) {
         Ok(Some(chain)) => Ok((AxumStatus::OK, Json(chain))),
-        Ok(None) => Err(AppError::NotFound(format!("Chain '{}' not found", chain_id))),
+        Ok(None) => Err(AppError::NotFound(format!(
+            "Chain '{}' not found",
+            chain_id
+        ))),
         Err(e) => Err(AppError::Database(format!("Failed: {}", e))),
     }
 }
@@ -525,7 +566,10 @@ async fn distill_reasoning_chain(
     Path(chain_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     match state.reasoning.distill_to_semantic(&chain_id) {
-        Ok(record_id) => Ok((AxumStatus::OK, Json(serde_json::json!({"distilled_to": record_id})))),
+        Ok(record_id) => Ok((
+            AxumStatus::OK,
+            Json(serde_json::json!({"distilled_to": record_id})),
+        )),
         Err(e) => Err(AppError::BadRequest(e)),
     }
 }
@@ -534,21 +578,21 @@ async fn distill_reasoning_chain(
 //  HANDLERS — Consolidation
 // ══════════════════════════════════════════════════════════════════════════
 
-async fn run_consolidation(
-    State(state): State<ApiState>,
-) -> impl IntoResponse {
+async fn run_consolidation(State(state): State<ApiState>) -> impl IntoResponse {
     let report = state.consolidation.run_cycle();
     (AxumStatus::OK, Json(report))
 }
 
-async fn analyze_tiers(
-    State(state): State<ApiState>,
-) -> Result<impl IntoResponse, AppError> {
+async fn analyze_tiers(State(state): State<ApiState>) -> Result<impl IntoResponse, AppError> {
     let mut analyses = Vec::new();
     for tier in MemoryTier::all() {
-        let config = state.store.get_tier_config(tier)
+        let config = state
+            .store
+            .get_tier_config(tier)
             .map_err(|e| AppError::Database(format!("Failed: {}", e)))?;
-        let records = state.store.list_by_tier(tier, 1000, 0)
+        let records = state
+            .store
+            .list_by_tier(tier, 1000, 0)
             .map_err(|e| AppError::Database(format!("Failed: {}", e)))?;
         analyses.push(serde_json::json!({
             "tier": tier.to_string(),
@@ -574,12 +618,13 @@ async fn detect_conflicts(
 //  HANDLERS — Evolution
 // ══════════════════════════════════════════════════════════════════════════
 
-async fn run_evolution(
-    State(state): State<ApiState>,
-) -> Result<impl IntoResponse, AppError> {
+async fn run_evolution(State(state): State<ApiState>) -> Result<impl IntoResponse, AppError> {
     let evo = state.evolution.read().await;
     let events = evo.tune_tiers();
-    Ok((AxumStatus::OK, Json(serde_json::json!({"tuning_events": events.len(), "events": events}))))
+    Ok((
+        AxumStatus::OK,
+        Json(serde_json::json!({"tuning_events": events.len(), "events": events})),
+    ))
 }
 
 async fn get_evolution_events(
@@ -587,7 +632,11 @@ async fn get_evolution_events(
     Query(query): Query<SearchQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let limit = query.limit.unwrap_or(50).min(200);
-    let event_type = if query.q.is_empty() { None } else { Some(query.q.as_str()) };
+    let event_type = if query.q.is_empty() {
+        None
+    } else {
+        Some(query.q.as_str())
+    };
     match state.store.get_evolution_events(event_type, limit) {
         Ok(events) => Ok((AxumStatus::OK, Json(events))),
         Err(e) => Err(AppError::Database(format!("Failed: {}", e))),
@@ -619,12 +668,14 @@ async fn smart_search(
     }
 }
 
-async fn system_health(
-    State(state): State<ApiState>,
-) -> Result<impl IntoResponse, AppError> {
-    let stats = state.store.stats()
+async fn system_health(State(state): State<ApiState>) -> Result<impl IntoResponse, AppError> {
+    let stats = state
+        .store
+        .stats()
         .map_err(|e| AppError::Database(format!("Failed: {}", e)))?;
-    let graph_edges = state.graph.edge_count()
+    let graph_edges = state
+        .graph
+        .edge_count()
         .map_err(|e| AppError::Database(format!("Failed: {}", e)))?;
     let mut recommendations = Vec::new();
     for (tier_name, tier_stats) in &stats.tier_breakdown {
@@ -635,13 +686,16 @@ async fn system_health(
             ));
         }
     }
-    Ok((AxumStatus::OK, Json(serde_json::json!({
-        "status": "ok",
-        "total_records": stats.total_records,
-        "total_across_tiers": stats.total_records,
-        "graph_edges": graph_edges,
-        "recommendations": recommendations,
-    }))))
+    Ok((
+        AxumStatus::OK,
+        Json(serde_json::json!({
+            "status": "ok",
+            "total_records": stats.total_records,
+            "total_across_tiers": stats.total_records,
+            "graph_edges": graph_edges,
+            "recommendations": recommendations,
+        })),
+    ))
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -666,7 +720,10 @@ async fn metrics_handler() -> impl IntoResponse {
     let body = crate::metrics::render_prometheus();
     (
         AxumStatus::OK,
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
         body,
     )
 }
@@ -843,7 +900,10 @@ impl MemoryApi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, http::{Method, Request}};
+    use axum::{
+        body::Body,
+        http::{Method, Request},
+    };
     use tower::util::ServiceExt;
 
     #[tokio::test]
@@ -852,7 +912,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/stats").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/stats")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -893,7 +957,11 @@ mod tests {
 
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/tiers/episodic").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/tiers/episodic")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -907,7 +975,11 @@ mod tests {
 
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/health").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -921,7 +993,11 @@ mod tests {
 
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/search/smart?q=test").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/search/smart?q=test")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -934,7 +1010,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/search?q=test").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/search?q=test")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -947,7 +1027,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/search?q=test&tier=episodic").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/search?q=test&tier=episodic")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -960,7 +1044,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/records").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/records")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -973,7 +1061,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/records?type=news").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/records?type=news")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -986,7 +1078,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/records/nonexistent").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/records/nonexistent")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -999,7 +1095,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::DELETE).uri("/records/nonexistent").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri("/records/nonexistent")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1056,7 +1156,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/graph/edges/nonexistent").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/graph/edges/nonexistent")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1091,7 +1195,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/graph/hubs").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/graph/hubs")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1127,7 +1235,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/reason/search?q=test").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/reason/search?q=test")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1140,7 +1252,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::POST).uri("/consolidate").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/consolidate")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1153,7 +1269,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/consolidate/analyze").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/consolidate/analyze")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1185,7 +1305,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::POST).uri("/evolve").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/evolve")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1198,7 +1322,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/evolution/events?q=").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/evolution/events?q=")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1211,7 +1339,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::POST).uri("/tiers/flush").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/tiers/flush")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1224,7 +1356,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::POST).uri("/tiers/auto-promote/episodic").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/tiers/auto-promote/episodic")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1237,7 +1373,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::POST).uri("/clear").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/clear")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1250,7 +1390,11 @@ mod tests {
         let app = api.router();
         let resp = app
             .oneshot(
-                Request::builder().method(Method::GET).uri("/metrics").body(Body::empty()).unwrap(),
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -1315,12 +1459,17 @@ mod tests {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
             .unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or(serde_json::json!(null));
+        let body: serde_json::Value =
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::json!(null));
         (status, body)
     }
 
     /// Helper: POST request with JSON body, return (status, body JSON).
-    async fn api_post(app: &Router, uri: &str, body: serde_json::Value) -> (AxumStatus, serde_json::Value) {
+    async fn api_post(
+        app: &Router,
+        uri: &str,
+        body: serde_json::Value,
+    ) -> (AxumStatus, serde_json::Value) {
         let resp = app
             .clone()
             .oneshot(
@@ -1337,7 +1486,8 @@ mod tests {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
             .unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or(serde_json::json!(null));
+        let body: serde_json::Value =
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::json!(null));
         (status, body)
     }
 
@@ -1358,7 +1508,8 @@ mod tests {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
             .unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or(serde_json::json!(null));
+        let body: serde_json::Value =
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::json!(null));
         (status, body)
     }
 
@@ -1368,20 +1519,51 @@ mod tests {
     async fn integration_insert_search_get_delete() {
         let app = MemoryApi::new(":memory:", "0.0.0.0:0").unwrap().router();
 
-        api_insert(&app, "doc-1", "Rust is a systems programming language", "note", "episodic", 0.8).await;
-        api_insert(&app, "doc-2", "Python is great for data science", "note", "episodic", 0.7).await;
-        api_insert(&app, "doc-3", "Rust ownership prevents data races", "fact", "semantic", 0.9).await;
+        api_insert(
+            &app,
+            "doc-1",
+            "Rust is a systems programming language",
+            "note",
+            "episodic",
+            0.8,
+        )
+        .await;
+        api_insert(
+            &app,
+            "doc-2",
+            "Python is great for data science",
+            "note",
+            "episodic",
+            0.7,
+        )
+        .await;
+        api_insert(
+            &app,
+            "doc-3",
+            "Rust ownership prevents data races",
+            "fact",
+            "semantic",
+            0.9,
+        )
+        .await;
 
         let (status, results) = api_get(&app, "/search?q=Rust&limit=5").await;
         assert_eq!(status, AxumStatus::OK);
         assert!(results.is_array());
         let arr = results.as_array().unwrap();
-        assert!(arr.len() >= 2, "Expected at least 2 Rust results, got {}", arr.len());
+        assert!(
+            arr.len() >= 2,
+            "Expected at least 2 Rust results, got {}",
+            arr.len()
+        );
 
         let (status, record) = api_get(&app, "/records/doc-1").await;
         assert_eq!(status, AxumStatus::OK);
         assert_eq!(record["record"]["id"], "doc-1");
-        assert_eq!(record["record"]["content"], "Rust is a systems programming language");
+        assert_eq!(
+            record["record"]["content"],
+            "Rust is a systems programming language"
+        );
         assert_eq!(record["tier"], "Episodic");
 
         let (status, records) = api_get(&app, "/records").await;
@@ -1389,13 +1571,17 @@ mod tests {
         assert!(records.is_array());
         assert!(records.as_array().unwrap().len() >= 3);
 
-        let resp = app.clone().oneshot(
-            Request::builder()
-                .method(Method::DELETE)
-                .uri("/records/doc-2")
-                .body(Body::empty())
-                .unwrap(),
-        ).await.unwrap();
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri("/records/doc-2")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(resp.status(), AxumStatus::OK);
 
         let (status, _) = api_get(&app, "/records/doc-2").await;
@@ -1408,10 +1594,42 @@ mod tests {
     async fn integration_tier_lifecycle() {
         let app = MemoryApi::new(":memory:", "0.0.0.0:0").unwrap().router();
 
-        api_insert(&app, "ep-1", "Yesterday I visited the office", "event", "episodic", 0.6).await;
-        api_insert(&app, "ep-2", "The meeting was productive", "event", "episodic", 0.4).await;
-        api_insert(&app, "sem-1", "Rust uses ownership for memory safety", "fact", "semantic", 0.9).await;
-        api_insert(&app, "proc-1", "Always run cargo clippy before commit", "procedure", "procedural", 0.85).await;
+        api_insert(
+            &app,
+            "ep-1",
+            "Yesterday I visited the office",
+            "event",
+            "episodic",
+            0.6,
+        )
+        .await;
+        api_insert(
+            &app,
+            "ep-2",
+            "The meeting was productive",
+            "event",
+            "episodic",
+            0.4,
+        )
+        .await;
+        api_insert(
+            &app,
+            "sem-1",
+            "Rust uses ownership for memory safety",
+            "fact",
+            "semantic",
+            0.9,
+        )
+        .await;
+        api_insert(
+            &app,
+            "proc-1",
+            "Always run cargo clippy before commit",
+            "procedure",
+            "procedural",
+            0.85,
+        )
+        .await;
 
         let (status, episodic) = api_get(&app, "/tiers/episodic").await;
         assert_eq!(status, AxumStatus::OK);
@@ -1441,41 +1659,93 @@ mod tests {
     async fn integration_graph_pipeline() {
         let app = MemoryApi::new(":memory:", "0.0.0.0:0").unwrap().router();
 
-        api_insert(&app, "concept-A", "Machine Learning", "concept", "semantic", 0.8).await;
-        api_insert(&app, "concept-B", "Neural Networks", "concept", "semantic", 0.75).await;
-        api_insert(&app, "concept-C", "Deep Learning", "concept", "semantic", 0.9).await;
-        api_insert(&app, "concept-D", "Natural Language Processing", "concept", "semantic", 0.7).await;
+        api_insert(
+            &app,
+            "concept-A",
+            "Machine Learning",
+            "concept",
+            "semantic",
+            0.8,
+        )
+        .await;
+        api_insert(
+            &app,
+            "concept-B",
+            "Neural Networks",
+            "concept",
+            "semantic",
+            0.75,
+        )
+        .await;
+        api_insert(
+            &app,
+            "concept-C",
+            "Deep Learning",
+            "concept",
+            "semantic",
+            0.9,
+        )
+        .await;
+        api_insert(
+            &app,
+            "concept-D",
+            "Natural Language Processing",
+            "concept",
+            "semantic",
+            0.7,
+        )
+        .await;
 
-        api_post(&app, "/graph/edges", serde_json::json!({
-            "source_id": "concept-A",
-            "target_id": "concept-B",
-            "relation_type": "includes",
-            "weight": 0.9
-        })).await;
+        api_post(
+            &app,
+            "/graph/edges",
+            serde_json::json!({
+                "source_id": "concept-A",
+                "target_id": "concept-B",
+                "relation_type": "includes",
+                "weight": 0.9
+            }),
+        )
+        .await;
 
-        api_post(&app, "/graph/edges", serde_json::json!({
-            "source_id": "concept-B",
-            "target_id": "concept-C",
-            "relation_type": "includes",
-            "weight": 0.85
-        })).await;
+        api_post(
+            &app,
+            "/graph/edges",
+            serde_json::json!({
+                "source_id": "concept-B",
+                "target_id": "concept-C",
+                "relation_type": "includes",
+                "weight": 0.85
+            }),
+        )
+        .await;
 
-        api_post(&app, "/graph/edges", serde_json::json!({
-            "source_id": "concept-C",
-            "target_id": "concept-D",
-            "relation_type": "applies_to",
-            "weight": 0.7
-        })).await;
+        api_post(
+            &app,
+            "/graph/edges",
+            serde_json::json!({
+                "source_id": "concept-C",
+                "target_id": "concept-D",
+                "relation_type": "applies_to",
+                "weight": 0.7
+            }),
+        )
+        .await;
 
         let (status, edges) = api_get(&app, "/graph/edges/concept-A").await;
         assert_eq!(status, AxumStatus::OK);
         assert!(edges.is_array());
         assert!(edges.as_array().unwrap().len() >= 1);
 
-        let (status, bfs) = api_post(&app, "/graph/bfs", serde_json::json!({
-            "start_id": "concept-A",
-            "max_depth": 3
-        })).await;
+        let (status, bfs) = api_post(
+            &app,
+            "/graph/bfs",
+            serde_json::json!({
+                "start_id": "concept-A",
+                "max_depth": 3
+            }),
+        )
+        .await;
         assert_eq!(status, AxumStatus::OK);
 
         let (status, related) = api_get(&app, "/graph/related/concept-A").await;
@@ -1493,19 +1763,44 @@ mod tests {
     async fn integration_reasoning_pipeline() {
         let app = MemoryApi::new(":memory:", "0.0.0.0:0").unwrap().router();
 
-        api_insert(&app, "ctx-1", "Bitcoin dropped 10% yesterday due to regulatory news", "event", "episodic", 0.7).await;
-        api_insert(&app, "ctx-2", "The SEC announced new crypto regulations", "fact", "semantic", 0.8).await;
+        api_insert(
+            &app,
+            "ctx-1",
+            "Bitcoin dropped 10% yesterday due to regulatory news",
+            "event",
+            "episodic",
+            0.7,
+        )
+        .await;
+        api_insert(
+            &app,
+            "ctx-2",
+            "The SEC announced new crypto regulations",
+            "fact",
+            "semantic",
+            0.8,
+        )
+        .await;
 
-        let (status, chain) = api_post(&app, "/reason", serde_json::json!({
-            "goal": "Understand why Bitcoin dropped",
-            "context_query": "Bitcoin regulatory SEC",
-            "tags": ["crypto", "analysis"]
-        })).await;
+        let (status, chain) = api_post(
+            &app,
+            "/reason",
+            serde_json::json!({
+                "goal": "Understand why Bitcoin dropped",
+                "context_query": "Bitcoin regulatory SEC",
+                "tags": ["crypto", "analysis"]
+            }),
+        )
+        .await;
         assert_eq!(status, AxumStatus::OK);
         assert!(chain.is_object());
         let chain_id = chain["chain_id"].as_str().unwrap().to_string();
 
-        assert!(chain_id.starts_with("chain_"), "chain_id should start with 'chain_', got: {}", chain_id);
+        assert!(
+            chain_id.starts_with("chain_"),
+            "chain_id should start with 'chain_', got: {}",
+            chain_id
+        );
 
         let (status, chains) = api_get(&app, "/reason/search?q=Bitcoin").await;
         assert_eq!(status, AxumStatus::OK);
@@ -1518,9 +1813,33 @@ mod tests {
     async fn integration_consolidation_pipeline() {
         let app = MemoryApi::new(":memory:", "0.0.0.0:0").unwrap().router();
 
-        api_insert(&app, "dup-1", "Rust uses ownership for memory safety", "fact", "semantic", 0.8).await;
-        api_insert(&app, "dup-2", "Rust ownership ensures memory safety", "fact", "semantic", 0.75).await;
-        api_insert(&app, "dup-3", "Go uses garbage collection for memory management", "fact", "semantic", 0.7).await;
+        api_insert(
+            &app,
+            "dup-1",
+            "Rust uses ownership for memory safety",
+            "fact",
+            "semantic",
+            0.8,
+        )
+        .await;
+        api_insert(
+            &app,
+            "dup-2",
+            "Rust ownership ensures memory safety",
+            "fact",
+            "semantic",
+            0.75,
+        )
+        .await;
+        api_insert(
+            &app,
+            "dup-3",
+            "Go uses garbage collection for memory management",
+            "fact",
+            "semantic",
+            0.7,
+        )
+        .await;
 
         let (status, report) = api_post_empty(&app, "/consolidate").await;
         assert_eq!(status, AxumStatus::OK);
@@ -1531,9 +1850,14 @@ mod tests {
         assert!(analyses.is_array());
         assert!(analyses.as_array().unwrap().len() == 4);
 
-        let (status, conflicts) = api_post(&app, "/consolidate/conflicts", serde_json::json!({
-            "content_type": "fact"
-        })).await;
+        let (status, conflicts) = api_post(
+            &app,
+            "/consolidate/conflicts",
+            serde_json::json!({
+                "content_type": "fact"
+            }),
+        )
+        .await;
         assert_eq!(status, AxumStatus::OK);
         assert!(conflicts.is_array());
     }
@@ -1552,7 +1876,8 @@ mod tests {
                 "test",
                 "episodic",
                 0.3 + (i as f64 * 0.1),
-            ).await;
+            )
+            .await;
         }
 
         let (status, body) = api_post_empty(&app, "/evolve").await;
@@ -1570,38 +1895,97 @@ mod tests {
     async fn integration_full_lifecycle() {
         let app = MemoryApi::new(":memory:", "0.0.0.0:0").unwrap().router();
 
-        api_insert(&app, "life-1", "Alice joined the team in January", "event", "episodic", 0.6).await;
-        api_insert(&app, "life-2", "Alice is a senior engineer", "fact", "semantic", 0.8).await;
-        api_insert(&app, "life-3", "Alice led the migration project", "event", "episodic", 0.7).await;
-        api_insert(&app, "life-4", "The migration project reduced costs by 30%", "fact", "semantic", 0.85).await;
-        api_insert(&app, "life-5", "Always backup before database migrations", "procedure", "procedural", 0.9).await;
+        api_insert(
+            &app,
+            "life-1",
+            "Alice joined the team in January",
+            "event",
+            "episodic",
+            0.6,
+        )
+        .await;
+        api_insert(
+            &app,
+            "life-2",
+            "Alice is a senior engineer",
+            "fact",
+            "semantic",
+            0.8,
+        )
+        .await;
+        api_insert(
+            &app,
+            "life-3",
+            "Alice led the migration project",
+            "event",
+            "episodic",
+            0.7,
+        )
+        .await;
+        api_insert(
+            &app,
+            "life-4",
+            "The migration project reduced costs by 30%",
+            "fact",
+            "semantic",
+            0.85,
+        )
+        .await;
+        api_insert(
+            &app,
+            "life-5",
+            "Always backup before database migrations",
+            "procedure",
+            "procedural",
+            0.9,
+        )
+        .await;
 
-        api_post(&app, "/graph/edges", serde_json::json!({
-            "source_id": "life-2",
-            "target_id": "life-1",
-            "relation_type": "participates_in",
-            "weight": 0.8
-        })).await;
-        api_post(&app, "/graph/edges", serde_json::json!({
-            "source_id": "life-3",
-            "target_id": "life-4",
-            "relation_type": "causes",
-            "weight": 0.9
-        })).await;
+        api_post(
+            &app,
+            "/graph/edges",
+            serde_json::json!({
+                "source_id": "life-2",
+                "target_id": "life-1",
+                "relation_type": "participates_in",
+                "weight": 0.8
+            }),
+        )
+        .await;
+        api_post(
+            &app,
+            "/graph/edges",
+            serde_json::json!({
+                "source_id": "life-3",
+                "target_id": "life-4",
+                "relation_type": "causes",
+                "weight": 0.9
+            }),
+        )
+        .await;
 
         let (status, results) = api_get(&app, "/search?q=Alice").await;
         assert_eq!(status, AxumStatus::OK);
         let alice_results = results.as_array().unwrap();
-        assert!(alice_results.len() >= 2, "Expected at least 2 Alice results, got {}", alice_results.len());
+        assert!(
+            alice_results.len() >= 2,
+            "Expected at least 2 Alice results, got {}",
+            alice_results.len()
+        );
 
         let (status, _) = api_post_empty(&app, "/tiers/promote/life-4/semantic").await;
         assert_eq!(status, AxumStatus::OK);
 
-        let (status, chain) = api_post(&app, "/reason", serde_json::json!({
-            "goal": "Summarize Alice's contributions",
-            "context_query": "Alice migration",
-            "tags": ["team", "projects"]
-        })).await;
+        let (status, chain) = api_post(
+            &app,
+            "/reason",
+            serde_json::json!({
+                "goal": "Summarize Alice's contributions",
+                "context_query": "Alice migration",
+                "tags": ["team", "projects"]
+            }),
+        )
+        .await;
         assert_eq!(status, AxumStatus::OK);
 
         let (status, _) = api_post_empty(&app, "/consolidate").await;
@@ -1624,16 +2008,29 @@ mod tests {
         assert_eq!(status, AxumStatus::OK);
         assert_eq!(analyses.as_array().unwrap().len(), 4);
 
-        let resp = app.clone().oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri("/metrics")
-                .body(Body::empty())
-                .unwrap(),
-        ).await.unwrap();
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(resp.status(), AxumStatus::OK);
-        let content_type = resp.headers().get("content-type").unwrap().to_str().unwrap();
-        assert!(content_type.contains("text/plain"), "Expected text/plain for Prometheus, got {}", content_type);
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            content_type.contains("text/plain"),
+            "Expected text/plain for Prometheus, got {}",
+            content_type
+        );
     }
 
     // ── Pipeline 8: Flush Working Memory ───────────────────────────────
@@ -1642,7 +2039,15 @@ mod tests {
     async fn integration_working_memory_flush() {
         let app = MemoryApi::new(":memory:", "0.0.0.0:0").unwrap().router();
 
-        api_insert(&app, "wm-1", "Transient observation about weather", "observation", "working", 0.5).await;
+        api_insert(
+            &app,
+            "wm-1",
+            "Transient observation about weather",
+            "observation",
+            "working",
+            0.5,
+        )
+        .await;
 
         let (status, body) = api_post_empty(&app, "/tiers/flush").await;
         assert_eq!(status, AxumStatus::OK);

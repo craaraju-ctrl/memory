@@ -60,9 +60,10 @@ pub fn chunk_text(text: &str, strategy: ChunkStrategy) -> Vec<TextChunk> {
     match strategy {
         ChunkStrategy::Sentence => chunk_by_sentences(text),
         ChunkStrategy::Paragraph => chunk_by_paragraphs(text),
-        ChunkStrategy::TokenCount { max_tokens, overlap } => {
-            chunk_by_tokens(text, max_tokens, overlap)
-        }
+        ChunkStrategy::TokenCount {
+            max_tokens,
+            overlap,
+        } => chunk_by_tokens(text, max_tokens, overlap),
     }
 }
 
@@ -176,7 +177,10 @@ impl RagPipeline {
     }
 
     /// Embed multiple records in batch.
-    pub async fn embed_batch(&self, records: Vec<MemoryRecord>) -> Result<Vec<MemoryRecord>, String> {
+    pub async fn embed_batch(
+        &self,
+        records: Vec<MemoryRecord>,
+    ) -> Result<Vec<MemoryRecord>, String> {
         let texts: Vec<&str> = records.iter().map(|r| r.content.as_str()).collect();
         let embeddings = self.embedder.embed_batch(&texts).await?;
 
@@ -235,7 +239,11 @@ impl RagPipeline {
             })
             .collect();
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.into_iter().take(k).collect()
     }
 
@@ -245,8 +253,8 @@ impl RagPipeline {
     }
 }
 
-pub use crate::embed_openai::OpenAIEmbedder;
 pub use crate::embed_cohere::CohereEmbedder;
+pub use crate::embed_openai::OpenAIEmbedder;
 
 // ── Ollama Embedder ─────────────────────────────────────────────────────────
 
@@ -294,7 +302,8 @@ impl OllamaEmbedder {
             .and_then(|s| s.parse().ok())
             .unwrap_or(30);
 
-        let client = crate::resilience::ResilientClient::new(max_retries, cb_threshold, cb_reset_secs);
+        let client =
+            crate::resilience::ResilientClient::new(max_retries, cb_threshold, cb_reset_secs);
 
         let dim = known_model_dim(model).unwrap_or(768);
 
@@ -322,10 +331,7 @@ impl OllamaEmbedder {
         });
 
         // Use the resilient client (Circuit Breaker + Retry)
-        let json: serde_json::Value = self
-            .client
-            .post_json(&url, &body)
-            .await?;
+        let json: serde_json::Value = self.client.post_json(&url, &body).await?;
 
         let embeddings = json["embeddings"]
             .as_array()
@@ -356,10 +362,7 @@ impl Embedder for OllamaEmbedder {
             "input": texts,
         });
 
-        let json: serde_json::Value = self
-            .client
-            .post_json(&url, &body)
-            .await?;
+        let json: serde_json::Value = self.client.post_json(&url, &body).await?;
 
         let embeddings = json["embeddings"]
             .as_array()
@@ -422,10 +425,13 @@ mod tests {
     #[test]
     fn test_chunk_by_tokens() {
         let text = "a b c d e f g h i j";
-        let chunks = chunk_text(text, ChunkStrategy::TokenCount {
-            max_tokens: 3,
-            overlap: 1,
-        });
+        let chunks = chunk_text(
+            text,
+            ChunkStrategy::TokenCount {
+                max_tokens: 3,
+                overlap: 1,
+            },
+        );
         assert_eq!(chunks.len(), 5); // 3+3+3+3+2 with overlap 1
         assert_eq!(chunks[0].text, "a b c");
         assert_eq!(chunks[1].text, "c d e");

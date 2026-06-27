@@ -139,17 +139,22 @@ impl ReasoningEngine {
     }
 
     /// Search reasoning chains by goal similarity.
-    pub fn search_chains(&self, query: &str, limit: usize) -> rusqlite::Result<Vec<ReasoningChain>> {
+    pub fn search_chains(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> rusqlite::Result<Vec<ReasoningChain>> {
         self.store.search_reasoning_chains(query, limit)
     }
 
     /// Find past chains that successfully achieved a similar goal.
-    pub fn find_similar_successful_chains(&self, goal: &str, limit: usize) -> rusqlite::Result<Vec<ReasoningChain>> {
+    pub fn find_similar_successful_chains(
+        &self,
+        goal: &str,
+        limit: usize,
+    ) -> rusqlite::Result<Vec<ReasoningChain>> {
         let all = self.store.search_reasoning_chains(goal, limit)?;
-        Ok(all
-            .into_iter()
-            .filter(|c| c.success)
-            .collect())
+        Ok(all.into_iter().filter(|c| c.success).collect())
     }
 
     /// Extract reusable insights from a reasoning chain.
@@ -181,12 +186,19 @@ impl ReasoningEngine {
         }
 
         // Extract key reasoning pattern
-        let successful_steps: Vec<&ReasoningStep> = chain.steps.iter().filter(|s| s.success).collect();
+        let successful_steps: Vec<&ReasoningStep> =
+            chain.steps.iter().filter(|s| s.success).collect();
         if successful_steps.len() >= 2 {
             insights.push(format!(
                 "Reasoning pattern: {} → ... → {} ({} steps)",
-                successful_steps.first().map(|s| &s.premise).unwrap_or(&"".to_string()),
-                successful_steps.last().map(|s| &s.conclusion).unwrap_or(&"".to_string()),
+                successful_steps
+                    .first()
+                    .map(|s| &s.premise)
+                    .unwrap_or(&"".to_string()),
+                successful_steps
+                    .last()
+                    .map(|s| &s.conclusion)
+                    .unwrap_or(&"".to_string()),
                 successful_steps.len()
             ));
         }
@@ -260,7 +272,9 @@ impl ReasoningEngine {
 /// Simple UUID without external dependency.
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!(
         "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
         now.as_secs(),
@@ -300,20 +314,50 @@ mod tests {
         engine.store.store_reasoning_chain(&chain).unwrap();
 
         // Add steps
-        engine.add_step(&chain_id, "Price increased 10%", "Check volume", Some("volume_analyzer")).unwrap();
-        engine.complete_step(&chain_id, 0, "Volume confirms trend", 0.85, true).unwrap();
+        engine
+            .add_step(
+                &chain_id,
+                "Price increased 10%",
+                "Check volume",
+                Some("volume_analyzer"),
+            )
+            .unwrap();
+        engine
+            .complete_step(&chain_id, 0, "Volume confirms trend", 0.85, true)
+            .unwrap();
 
-        engine.add_step(&chain_id, "Trend confirmed", "Check resistance levels", Some("resistance_checker")).unwrap();
-        engine.complete_step(&chain_id, 1, "Resistance at $105", 0.75, true).unwrap();
+        engine
+            .add_step(
+                &chain_id,
+                "Trend confirmed",
+                "Check resistance levels",
+                Some("resistance_checker"),
+            )
+            .unwrap();
+        engine
+            .complete_step(&chain_id, 1, "Resistance at $105", 0.75, true)
+            .unwrap();
 
         // Finalize
-        let finalized = engine.finalize_chain(&chain_id, "Bullish trend, target $105", 0.85, true, vec!["r1".into()], 2500).unwrap();
+        let finalized = engine
+            .finalize_chain(
+                &chain_id,
+                "Bullish trend, target $105",
+                0.85,
+                true,
+                vec!["r1".into()],
+                2500,
+            )
+            .unwrap();
         assert_eq!(finalized.steps.len(), 2);
         assert!(finalized.success);
 
         // Retrieve
         let retrieved = engine.get_chain(&chain_id).unwrap().expect("Should exist");
-        assert_eq!(retrieved.final_conclusion.unwrap(), "Bullish trend, target $105");
+        assert_eq!(
+            retrieved.final_conclusion.unwrap(),
+            "Bullish trend, target $105"
+        );
     }
 
     #[test]
@@ -339,9 +383,15 @@ mod tests {
         let chain_id = chain.chain_id.clone();
         engine.store.store_reasoning_chain(&chain).unwrap();
 
-        engine.add_step(&chain_id, "Step 1", "Do thing", Some("tool_a")).unwrap();
-        engine.complete_step(&chain_id, 0, "Done", 0.9, true).unwrap();
-        engine.finalize_chain(&chain_id, "Success", 0.9, true, vec![], 100).unwrap();
+        engine
+            .add_step(&chain_id, "Step 1", "Do thing", Some("tool_a"))
+            .unwrap();
+        engine
+            .complete_step(&chain_id, 0, "Done", 0.9, true)
+            .unwrap();
+        engine
+            .finalize_chain(&chain_id, "Success", 0.9, true, vec![], 100)
+            .unwrap();
 
         let insights = engine.extract_insights(&chain_id).unwrap();
         assert!(!insights.is_empty());

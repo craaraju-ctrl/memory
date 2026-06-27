@@ -59,7 +59,8 @@ impl LLMClient {
     }
 
     pub fn new_from_env() -> Self {
-        let base_url = std::env::var("LLM_BASE_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
+        let base_url =
+            std::env::var("LLM_BASE_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
         let model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "qwen3-8b".to_string());
         Self::new(&base_url, &model)
     }
@@ -94,13 +95,17 @@ impl LLMClient {
         let content = choice["content"].as_str().unwrap_or("").to_string();
 
         let tool_calls = if let Some(calls) = choice["tool_calls"].as_array() {
-            calls.iter()
+            calls
+                .iter()
                 .filter_map(|c| serde_json::from_value::<ToolCall>(c.clone()).ok())
                 .collect()
         } else {
             vec![]
         };
 
-        Ok(LLMResponse { content, tool_calls })
+        Ok(LLMResponse {
+            content,
+            tool_calls,
+        })
     }
 }

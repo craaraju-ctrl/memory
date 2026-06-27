@@ -90,8 +90,8 @@ impl MemoryClient {
 
     /// Create from environment variables (MEMORY_API_URL, MEMORY_API_KEY).
     pub fn from_env() -> Self {
-        let base_url = std::env::var("MEMORY_API_URL")
-            .unwrap_or_else(|_| "http://localhost:3111".to_string());
+        let base_url =
+            std::env::var("MEMORY_API_URL").unwrap_or_else(|_| "http://localhost:3111".to_string());
         let api_key = std::env::var("MEMORY_API_KEY").ok();
         let mut client = Self::new(&base_url);
         if let Some(key) = api_key {
@@ -199,10 +199,7 @@ impl MemoryClient {
                 .or_else(|| resp["content_type"].as_str())
                 .unwrap_or("")
                 .to_string(),
-            tier: resp["tier"]
-                .as_str()
-                .unwrap_or("episodic")
-                .to_string(),
+            tier: resp["tier"].as_str().unwrap_or("episodic").to_string(),
             importance: resp["importance"].as_f64().unwrap_or(0.5),
             access_count: resp["access_count"].as_u64().unwrap_or(0),
             metadata: resp
@@ -234,7 +231,11 @@ impl MemoryClient {
     // ── Search ───────────────────────────────────────────────────────────
 
     /// Search records by full-text query.
-    pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<ClientSearchResult>, String> {
+    pub async fn search(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<ClientSearchResult>, String> {
         let url = format!("/search?q={}&limit={}", urlencoding::encode(query), limit);
         let resp: Vec<serde_json::Value> = self
             .build_request(reqwest::Method::GET, &url)
@@ -265,10 +266,7 @@ impl MemoryClient {
                     .to_string(),
                 tier: "episodic".to_string(),
                 score: r["score"].as_f64().unwrap_or(0.0),
-                method: r["method"]
-                    .as_str()
-                    .unwrap_or("fts")
-                    .to_string(),
+                method: r["method"].as_str().unwrap_or("fts").to_string(),
                 metadata: r
                     .get("record")
                     .and_then(|rec| rec.get("metadata"))
@@ -321,10 +319,7 @@ impl MemoryClient {
                     .to_string(),
                 tier: tier.to_string(),
                 score: r["score"].as_f64().unwrap_or(0.0),
-                method: r["method"]
-                    .as_str()
-                    .unwrap_or("fts")
-                    .to_string(),
+                method: r["method"].as_str().unwrap_or("fts").to_string(),
                 metadata: r
                     .get("record")
                     .and_then(|rec| rec.get("metadata"))
@@ -390,10 +385,7 @@ impl MemoryClient {
             .await
             .map_err(|e| format!("Parse error: {}", e))?;
 
-        Ok(resp["edge_id"]
-            .as_str()
-            .unwrap_or("")
-            .to_string())
+        Ok(resp["edge_id"].as_str().unwrap_or("").to_string())
     }
 
     // ── System ───────────────────────────────────────────────────────────
@@ -410,10 +402,7 @@ impl MemoryClient {
             .map_err(|e| format!("Parse error: {}", e))?;
 
         Ok(HealthStatus {
-            status: resp["status"]
-                .as_str()
-                .unwrap_or("unknown")
-                .to_string(),
+            status: resp["status"].as_str().unwrap_or("unknown").to_string(),
             total_records: resp["total_records"].as_u64().unwrap_or(0),
             graph_edges: resp["graph_edges"].as_u64().unwrap_or(0),
         })
@@ -432,9 +421,7 @@ impl MemoryClient {
 
         Ok(MemoryStats {
             total_records: resp["total_records"].as_u64().unwrap_or(0),
-            total_with_embeddings: resp["total_with_embeddings"]
-                .as_u64()
-                .unwrap_or(0),
+            total_with_embeddings: resp["total_with_embeddings"].as_u64().unwrap_or(0),
             storage_bytes: resp["storage_bytes"].as_u64().unwrap_or(0),
         })
     }

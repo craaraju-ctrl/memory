@@ -29,7 +29,8 @@ impl KnowledgeGraph {
         relation_type: &str,
         weight: f64,
     ) -> rusqlite::Result<String> {
-        self.store.add_edge(source_id, target_id, relation_type, weight)
+        self.store
+            .add_edge(source_id, target_id, relation_type, weight)
     }
 
     /// Add a bidirectional (undirected) edge.
@@ -68,7 +69,12 @@ impl KnowledgeGraph {
     }
 
     /// BFS traversal from a starting node up to max_depth.
-    pub fn bfs(&self, start_id: &str, max_depth: u32, relation_filter: Option<&str>) -> rusqlite::Result<Vec<GraphTraversalResult>> {
+    pub fn bfs(
+        &self,
+        start_id: &str,
+        max_depth: u32,
+        relation_filter: Option<&str>,
+    ) -> rusqlite::Result<Vec<GraphTraversalResult>> {
         self.store.graph_bfs(start_id, max_depth, relation_filter)
     }
 
@@ -79,27 +85,34 @@ impl KnowledgeGraph {
         relation_type: Option<&str>,
         max_depth: u32,
     ) -> rusqlite::Result<Vec<(MemoryRecord, u32, String, f64)>> {
-        self.store.get_related_records(record_id, relation_type, max_depth)
+        self.store
+            .get_related_records(record_id, relation_type, max_depth)
     }
 
     /// Find a path between two records (shortest path via BFS).
-    pub fn find_path(&self, from_id: &str, to_id: &str, max_depth: u32) -> rusqlite::Result<Option<GraphTraversalResult>> {
+    pub fn find_path(
+        &self,
+        from_id: &str,
+        to_id: &str,
+        max_depth: u32,
+    ) -> rusqlite::Result<Option<GraphTraversalResult>> {
         let results = self.bfs(from_id, max_depth, None)?;
         Ok(results.into_iter().find(|r| r.node_id == to_id))
     }
 
     /// Detect communities using connected-component analysis.
     /// Returns a map of component ID → list of record IDs in that component.
-    pub fn detect_communities(&self, max_records: usize) -> rusqlite::Result<HashMap<u32, Vec<String>>> {
+    pub fn detect_communities(
+        &self,
+        max_records: usize,
+    ) -> rusqlite::Result<HashMap<u32, Vec<String>>> {
         // Get all edges using direct row iteration
         let mut edges: Vec<(String, String)> = Vec::new();
         {
             let conn = self.store.conn.lock().map_err(|e| {
                 rusqlite::Error::InvalidParameterName(format!("Mutex poisoned: {}", e))
             })?;
-            let mut stmt = conn.prepare(
-                "SELECT DISTINCT source_id, target_id FROM graph_edges",
-            )?;
+            let mut stmt = conn.prepare("SELECT DISTINCT source_id, target_id FROM graph_edges")?;
             let mut rows = stmt.query([])?;
             while let Some(row) = rows.next()? {
                 let src: String = row.get(0)?;
@@ -186,9 +199,10 @@ impl KnowledgeGraph {
 
     /// Delete all edges connected to a record.
     pub fn remove_edges(&self, record_id: &str) -> rusqlite::Result<u64> {
-        let conn = self.store.conn.lock().map_err(|e| {
-            rusqlite::Error::InvalidParameterName(format!("Mutex poisoned: {}", e))
-        })?;
+        let conn =
+            self.store.conn.lock().map_err(|e| {
+                rusqlite::Error::InvalidParameterName(format!("Mutex poisoned: {}", e))
+            })?;
         let deleted = conn.execute(
             "DELETE FROM graph_edges WHERE source_id = ?1 OR target_id = ?1",
             [record_id],
@@ -198,18 +212,20 @@ impl KnowledgeGraph {
 
     /// Clear the entire graph.
     pub fn clear(&self) -> rusqlite::Result<()> {
-        let conn = self.store.conn.lock().map_err(|e| {
-            rusqlite::Error::InvalidParameterName(format!("Mutex poisoned: {}", e))
-        })?;
+        let conn =
+            self.store.conn.lock().map_err(|e| {
+                rusqlite::Error::InvalidParameterName(format!("Mutex poisoned: {}", e))
+            })?;
         conn.execute("DELETE FROM graph_edges", [])?;
         Ok(())
     }
 
     /// Count total edges in the graph.
     pub fn edge_count(&self) -> rusqlite::Result<u64> {
-        let conn = self.store.conn.lock().map_err(|e| {
-            rusqlite::Error::InvalidParameterName(format!("Mutex poisoned: {}", e))
-        })?;
+        let conn =
+            self.store.conn.lock().map_err(|e| {
+                rusqlite::Error::InvalidParameterName(format!("Mutex poisoned: {}", e))
+            })?;
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM graph_edges", [], |r| r.get(0))?;
         Ok(count as u64)
     }
@@ -227,7 +243,8 @@ mod tests {
 
         // Insert records
         for id in &["a", "b", "c", "d", "e"] {
-            let record = MemoryRecord::new(id.to_string(), format!("Node {}", id), "graph_test".into());
+            let record =
+                MemoryRecord::new(id.to_string(), format!("Node {}", id), "graph_test".into());
             store.insert(&record).unwrap();
         }
 

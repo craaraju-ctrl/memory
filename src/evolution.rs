@@ -117,12 +117,15 @@ impl EvolutionEngine {
                     if stats.total_accesses > 1000 && stats.record_count > 0 {
                         let access_per_record = stats.total_accesses / stats.record_count.max(1);
                         if access_per_record > 10 {
-                            new_config.max_records = (current_config.max_records as f64 * 1.5) as usize;
+                            new_config.max_records =
+                                (current_config.max_records as f64 * 1.5) as usize;
                             events.push(EvolutionEvent {
                                 event_id: format!("evt_{}", uuid_v4()),
                                 event_type: "tier_tuned".into(),
-                                description: format!("Increased {} capacity from {} to {} due to high access rate",
-                                    tier, current_config.max_records, new_config.max_records),
+                                description: format!(
+                                    "Increased {} capacity from {} to {} due to high access rate",
+                                    tier, current_config.max_records, new_config.max_records
+                                ),
                                 previous_value: Some(current_config.max_records.to_string()),
                                 new_value: Some(new_config.max_records.to_string()),
                                 confidence: 0.7,
@@ -137,8 +140,10 @@ impl EvolutionEngine {
                         events.push(EvolutionEvent {
                             event_id: format!("evt_{}", uuid_v4()),
                             event_type: "tier_tuned".into(),
-                            description: format!("Decreased {} capacity from {} to {} due to low usage",
-                                tier, current_config.max_records, new_config.max_records),
+                            description: format!(
+                                "Decreased {} capacity from {} to {} due to low usage",
+                                tier, current_config.max_records, new_config.max_records
+                            ),
                             previous_value: Some(current_config.max_records.to_string()),
                             new_value: Some(new_config.max_records.to_string()),
                             confidence: 0.6,
@@ -170,7 +175,9 @@ impl EvolutionEngine {
             for candidate in &candidates {
                 // Skip if within TTL
                 if let Some(ttl) = candidate.ttl_seconds {
-                    if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&candidate.record.timestamp) {
+                    if let Ok(ts) =
+                        chrono::DateTime::parse_from_rfc3339(&candidate.record.timestamp)
+                    {
                         let ts_utc = ts.with_timezone(&chrono::Utc);
                         let age = (Utc::now() - ts_utc).num_seconds();
                         if age < ttl as i64 {
@@ -186,7 +193,9 @@ impl EvolutionEngine {
                         // Mark as archived in metadata
                         let mut record = candidate.record.clone();
                         record.metadata.insert("archived".into(), "true".into());
-                        record.metadata.insert("archived_at".into(), Utc::now().to_rfc3339());
+                        record
+                            .metadata
+                            .insert("archived_at".into(), Utc::now().to_rfc3339());
                         let _ = self.store.insert(&record);
                     }
 
@@ -234,13 +243,21 @@ impl EvolutionEngine {
                 .with_metadata("distilled_at", &Utc::now().to_rfc3339());
 
                 let id = proc_record.id.clone();
-                self.store.insert_into_tier(&proc_record, MemoryTier::Procedural, 0.9, None, None)?;
+                self.store.insert_into_tier(
+                    &proc_record,
+                    MemoryTier::Procedural,
+                    0.9,
+                    None,
+                    None,
+                )?;
 
                 events.push(EvolutionEvent {
                     event_id: format!("evt_{}", uuid_v4()),
                     event_type: "procedural_distilled".into(),
-                    description: format!("Distilled procedure from '{}' (importance: {:.2}, accesses: {})",
-                        record.record.id, record.importance, record.access_count),
+                    description: format!(
+                        "Distilled procedure from '{}' (importance: {:.2}, accesses: {})",
+                        record.record.id, record.importance, record.access_count
+                    ),
                     previous_value: None,
                     new_value: Some(id),
                     confidence: record.importance,
@@ -297,20 +314,32 @@ impl EvolutionEngine {
         // Log all evolution events
         for event in &report.tuning_events {
             let _ = self.store.record_evolution_event(
-                &event.event_id, &event.event_type, &event.description,
-                event.previous_value.as_deref(), event.new_value.as_deref(), event.confidence,
+                &event.event_id,
+                &event.event_type,
+                &event.description,
+                event.previous_value.as_deref(),
+                event.new_value.as_deref(),
+                event.confidence,
             );
         }
         for event in &report.pruning_events {
             let _ = self.store.record_evolution_event(
-                &event.event_id, &event.event_type, &event.description,
-                None, None, event.confidence,
+                &event.event_id,
+                &event.event_type,
+                &event.description,
+                None,
+                None,
+                event.confidence,
             );
         }
         for event in &report.distillation_events {
             let _ = self.store.record_evolution_event(
-                &event.event_id, &event.event_type, &event.description,
-                None, event.new_value.as_deref(), event.confidence,
+                &event.event_id,
+                &event.event_type,
+                &event.description,
+                None,
+                event.new_value.as_deref(),
+                event.confidence,
             );
         }
 
@@ -368,7 +397,9 @@ pub struct SleepCycleHandle {
 /// Simple UUID without external dependency.
 fn uuid_v4() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!(
         "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
         now.as_secs(),
@@ -398,10 +429,19 @@ mod tests {
         let store = MemoryStore::open(&config).unwrap();
 
         // Insert a low-importance record
-        store.insert_into_tier(
-            &crate::types::MemoryRecord::new("stale1".into(), "Old stale data".into(), "stale".into()),
-            MemoryTier::Episodic, 0.1, Some(1), None,
-        ).unwrap();
+        store
+            .insert_into_tier(
+                &crate::types::MemoryRecord::new(
+                    "stale1".into(),
+                    "Old stale data".into(),
+                    "stale".into(),
+                ),
+                MemoryTier::Episodic,
+                0.1,
+                Some(1),
+                None,
+            )
+            .unwrap();
 
         let evo_config = EvolutionConfig {
             min_records_for_tuning: 1,

@@ -31,7 +31,9 @@ impl RetrievalExpert {
         }
 
         let num_candidates = k * candidate_multiplier.max(1);
-        let candidates = self.store.search_vectors_hybrid(query_vec, num_candidates, num_candidates)?;
+        let candidates =
+            self.store
+                .search_vectors_hybrid(query_vec, num_candidates, num_candidates)?;
 
         if candidates.is_empty() {
             return Ok(vec![]);
@@ -40,14 +42,22 @@ impl RetrievalExpert {
         let mut scored = self.dense_rerank(query_vec, &candidates);
         self.boost_with_graph_reasoning(&mut scored, 0.18)?;
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(k);
 
         Ok(scored)
     }
 
     /// Re-rank candidates using full-precision cosine similarity.
-    fn dense_rerank(&self, query_vec: &[f64], candidates: &[(MemoryRecord, f32)]) -> Vec<SearchResult> {
+    fn dense_rerank(
+        &self,
+        query_vec: &[f64],
+        candidates: &[(MemoryRecord, f32)],
+    ) -> Vec<SearchResult> {
         candidates
             .iter()
             .filter_map(|(record, _)| {

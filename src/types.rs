@@ -75,7 +75,12 @@ pub enum MemoryTier {
 impl MemoryTier {
     /// All tiers in order from most volatile to most permanent.
     pub fn all() -> Vec<MemoryTier> {
-        vec![MemoryTier::Working, MemoryTier::Episodic, MemoryTier::Semantic, MemoryTier::Procedural]
+        vec![
+            MemoryTier::Working,
+            MemoryTier::Episodic,
+            MemoryTier::Semantic,
+            MemoryTier::Procedural,
+        ]
     }
 
     /// The next more permanent tier for promotion.
@@ -179,7 +184,7 @@ impl TierConfig {
         match tier {
             MemoryTier::Working => Self {
                 max_records: 100,
-                default_ttl_seconds: Some(3600),    // 1 hour
+                default_ttl_seconds: Some(3600), // 1 hour
                 promotion_threshold: 0.5,
                 demotion_threshold: 0.1,
                 auto_promote: true,
@@ -193,14 +198,14 @@ impl TierConfig {
             },
             MemoryTier::Semantic => Self {
                 max_records: 100_000,
-                default_ttl_seconds: None,           // permanent
+                default_ttl_seconds: None, // permanent
                 promotion_threshold: 0.85,
                 demotion_threshold: 0.15,
-                auto_promote: false,                 // manual or expert-driven
+                auto_promote: false, // manual or expert-driven
             },
             MemoryTier::Procedural => Self {
                 max_records: 10_000,
-                default_ttl_seconds: None,           // permanent
+                default_ttl_seconds: None, // permanent
                 promotion_threshold: 0.95,
                 demotion_threshold: 0.1,
                 auto_promote: false,
@@ -330,7 +335,12 @@ pub enum ExpertType {
 
 impl ExpertType {
     pub fn all() -> Vec<ExpertType> {
-        vec![ExpertType::Retrieval, ExpertType::Reasoning, ExpertType::Consolidation, ExpertType::Evolution]
+        vec![
+            ExpertType::Retrieval,
+            ExpertType::Reasoning,
+            ExpertType::Consolidation,
+            ExpertType::Evolution,
+        ]
     }
 }
 
@@ -399,7 +409,7 @@ pub struct ImportanceContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvolutionEvent {
     pub event_id: String,
-    pub event_type: String,       // e.g. "tier_tuned", "procedural_distilled", "stale_pruned"
+    pub event_type: String, // e.g. "tier_tuned", "procedural_distilled", "stale_pruned"
     pub description: String,
     pub previous_value: Option<String>,
     pub new_value: Option<String>,

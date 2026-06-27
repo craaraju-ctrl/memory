@@ -78,7 +78,11 @@ impl VectorMemory {
 
     /// Store a vector record (auto-quantizes to binary on insert).
     pub fn store(&mut self, record: VectorRecord) {
-        assert_eq!(record.vector.len(), self.dimension, "Vector dimension mismatch");
+        assert_eq!(
+            record.vector.len(),
+            self.dimension,
+            "Vector dimension mismatch"
+        );
         self.records.push(record);
     }
 
@@ -130,7 +134,12 @@ impl VectorMemory {
     }
 
     /// Hybrid search: use binary for coarse filtering, then cosine for re-ranking.
-    pub fn search_hybrid(&self, query: &[f64], k: usize, top_n: usize) -> Vec<(f64, &VectorRecord)> {
+    pub fn search_hybrid(
+        &self,
+        query: &[f64],
+        k: usize,
+        top_n: usize,
+    ) -> Vec<(f64, &VectorRecord)> {
         // Step 1: Binary coarse filter — get top_n candidates
         let candidates = self.search_binary(query, top_n);
 
@@ -166,7 +175,6 @@ impl VectorMemory {
     pub fn dimension(&self) -> usize {
         self.dimension
     }
-
 }
 
 impl Default for VectorMemory {
