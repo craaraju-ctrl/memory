@@ -17,6 +17,7 @@ use crate::types::{
 
 /// Initialize the sqlite-vec extension globally via sqlite3_auto_extension.
 /// Safe to call multiple times — subsequent calls are no-ops at the SQLite level.
+#[allow(clippy::missing_transmute_annotations)]
 pub fn init_vector_search() {
     use std::sync::Once;
     static INIT: Once = Once::new();
@@ -825,6 +826,7 @@ impl MemoryStore {
     //  EXPERT OPINIONS
     // ══════════════════════════════════════════════════════════════════════
 
+    #[allow(clippy::too_many_arguments)]
     pub fn store_opinion(
         &self,
         opinion_id: &str,
