@@ -35,17 +35,23 @@ updates:
       # reqwest-middleware 0.4+ is incompatible with reqwest 0.12
       - dependency-name: "reqwest-middleware"
         versions: [">=0.4"]
+      # reqwest-retry 0.7+ requires newer reqwest
+      - dependency-name: "reqwest-retry"
+        versions: [">=0.7"]
       # tower-http 0.6+ has breaking API changes
       - dependency-name: "tower-http"
         versions: [">=0.6"]
+      # axum 0.8+ has breaking API changes
+      - dependency-name: "axum"
+        versions: [">=0.8"]
       # metrics 0.24+ has breaking API changes
       - dependency-name: "metrics"
         versions: [">=0.24"]
       - dependency-name: "metrics-exporter-prometheus"
         versions: [">=0.17"]
-      # rusqlite 0.40+ has breaking API changes
+      # rusqlite 0.39+ has breaking API changes
       - dependency-name: "rusqlite"
-        versions: [">=0.40"]
+        versions: [">=0.39"]
       # tower 0.5+ has breaking API changes
       - dependency-name: "tower"
         versions: [">=0.5"]
