@@ -1,0 +1,26 @@
+# Dependabot — Automated Dependency Updates
+# Docs: https://docs.github.com/en/code-security/dependabot
+
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      rust-patches:
+        applies-to: version-updates
+        update-types:
+          - "patch"
+        patterns:
+          - "*"
