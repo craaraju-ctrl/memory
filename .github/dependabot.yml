@@ -1,5 +1,9 @@
 # Dependabot — Automated Dependency Updates
 # Docs: https://docs.github.com/en/code-security/dependabot
+#
+# Memory has ~20 direct dependencies. We restrict to minor+patch updates
+# to avoid breaking changes from ecosystem churn. Major bumps require
+# manual review and code changes.
 
 version: 2
 updates:
@@ -10,7 +14,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/New_York"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "rust"
@@ -24,3 +28,27 @@ updates:
           - "patch"
         patterns:
           - "*"
+    ignore:
+      # reqwest 0.13+ changes API — needs code update
+      - dependency-name: "reqwest"
+        versions: [">=0.13"]
+      # reqwest-middleware 0.4+ is incompatible with reqwest 0.12
+      - dependency-name: "reqwest-middleware"
+        versions: [">=0.4"]
+      # tower-http 0.6+ has breaking API changes
+      - dependency-name: "tower-http"
+        versions: [">=0.6"]
+      # metrics 0.24+ has breaking API changes
+      - dependency-name: "metrics"
+        versions: [">=0.24"]
+      - dependency-name: "metrics-exporter-prometheus"
+        versions: [">=0.17"]
+      # rusqlite 0.40+ has breaking API changes
+      - dependency-name: "rusqlite"
+        versions: [">=0.40"]
+      # tower 0.5+ has breaking API changes
+      - dependency-name: "tower"
+        versions: [">=0.5"]
+      # tower_governor 0.5+ has breaking API changes
+      - dependency-name: "tower_governor"
+        versions: [">=0.5"]
