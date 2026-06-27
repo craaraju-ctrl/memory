@@ -46,4 +46,4 @@ urlencoding = "2"
 uuid = { version = "1.10", features = ["v7", "serde"] }
 
 [dev-dependencies]
-tower = { version = "0.4", default-features = false, features = ["util"] }
+tower = { version = "0.5", default-features = false, features = ["util"] }
