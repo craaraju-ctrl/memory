@@ -10,14 +10,8 @@ name: CI
 on:
   push:
     branches: [main]
-    paths:
-      - "Memory/**"
-      - "Memory/.github/workflows/**"
   pull_request:
     branches: [main]
-    paths:
-      - "Memory/**"
-      - "Memory/.github/workflows/**"
 
 env:
   CARGO_TERM_COLOR: always
@@ -46,21 +40,18 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            Memory/target
-          key: memory-cargo-${{ hashFiles('Memory/Cargo.lock', 'Memory/Cargo.toml') }}
+            target
+          key: memory-cargo-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
           restore-keys: |
             memory-cargo-
 
       - name: cargo build
-        working-directory: Memory
         run: cargo build --workspace
 
       - name: cargo clippy
-        working-directory: Memory
         run: cargo clippy --workspace -- -D warnings
 
       - name: cargo fmt
-        working-directory: Memory
         run: cargo fmt --check
 
   # ── Unit Tests ─────────────────────────────────────────────────────────
@@ -84,14 +75,13 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            Memory/target
-          key: memory-cargo-test-${{ hashFiles('Memory/Cargo.lock', 'Memory/Cargo.toml') }}
+            target
+          key: memory-cargo-test-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
           restore-keys: |
             memory-cargo-test-
             memory-cargo-
 
       - name: Run fast tests (8 modules, 39 tests)
-        working-directory: Memory
         run: |
           cargo test --lib -- \
             vector::tests \
@@ -104,7 +94,6 @@ jobs:
             evolution::tests
 
       - name: Run slow tests (store, experts, api — 17 tests)
-        working-directory: Memory
         # These modules take longer due to sqlite-vec initialization overhead
         # in test setup. --test-threads=1 avoids contention on the global
         # sqlite-vec registration.
