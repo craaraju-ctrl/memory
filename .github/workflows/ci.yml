@@ -1,0 +1,111 @@
+# =============================================================================
+#  agentic-memory — CI Pipeline
+# =============================================================================
+# Runs on every push and pull request affecting the Memory module.
+# Checks: build, unit tests, clippy lints, and formatting.
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Memory/**"
+      - "Memory/.github/workflows/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "Memory/**"
+      - "Memory/.github/workflows/**"
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: short
+
+jobs:
+  # ── Build & Lint (fast) ────────────────────────────────────────────────
+  check:
+    name: Build & Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable --component rustfmt --component clippy
+          rustup default stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            Memory/target
+          key: memory-cargo-${{ hashFiles('Memory/Cargo.lock', 'Memory/Cargo.toml') }}
+          restore-keys: |
+            memory-cargo-
+
+      - name: cargo build
+        working-directory: Memory
+        run: cargo build --workspace
+
+      - name: cargo clippy
+        working-directory: Memory
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: cargo fmt
+        working-directory: Memory
+        run: cargo fmt --check
+
+  # ── Unit Tests ─────────────────────────────────────────────────────────
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable
+          rustup default stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            Memory/target
+          key: memory-cargo-test-${{ hashFiles('Memory/Cargo.lock', 'Memory/Cargo.toml') }}
+          restore-keys: |
+            memory-cargo-test-
+            memory-cargo-
+
+      - name: Run fast tests (8 modules, 39 tests)
+        working-directory: Memory
+        run: |
+          cargo test --lib -- \
+            vector::tests \
+            cache::tests \
+            graph::tests \
+            tiers::tests \
+            consolidation::tests \
+            reasoning::tests \
+            rag::tests \
+            evolution::tests
+
+      - name: Run slow tests (store, experts, api — 17 tests)
+        working-directory: Memory
+        # These modules take longer due to sqlite-vec initialization overhead
+        # in test setup. --test-threads=1 avoids contention on the global
+        # sqlite-vec registration.
+        run: cargo test --lib -- store::tests experts::tests api::tests --test-threads=1

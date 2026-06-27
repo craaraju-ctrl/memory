@@ -1,0 +1,22 @@
+# ── Rust build artifacts (can be gigabytes) ──────────────────────────────────
+target/
+
+# ── Version control ──────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Databases (don't ship test/prod databases to the image) ──────────────────
+*.db
+*.db-shm
+*.db-wal
+*.redb
+
+# ── Documentation (not needed at build time) ────────────────────────────────
+*.md
+README.md
+
+# ── IDE / editor files ──────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo

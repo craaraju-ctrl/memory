@@ -1,0 +1,105 @@
+# =============================================================================
+#  agentic-memory — Production Docker Compose
+# =============================================================================
+# Production-ready setup with:
+# - Ollama embedding sidecar
+# - Resource limits
+# - Health checks
+# - Persistent volumes
+# - Environment variable support via .env file
+# - Logging configuration
+#
+# Usage:
+#   cp .env.example .env
+#   docker compose up -d
+#   docker compose logs -f memory
+#
+# First time:
+#   docker compose exec ollama ollama pull nomic-embed-text
+# =============================================================================
+
+services:
+  # ── Ollama (Embedding Model Server) ─────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agentic-memory-ollama
+    hostname: ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - memory-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── agentic-memory API Server ───────────────────────────────────────────
+  memory:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentic-memory-server
+    restart: unless-stopped
+    ports:
+      - "3111:3111"
+    volumes:
+      - memory_data:/data
+    env_file:
+      - .env
+    environment:
+      # These can be overridden in .env file
+      - MEMORY_DB_PATH=/data/memory.db
+      - MEMORY_ADDR=0.0.0.0:3111
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3111/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - memory-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  ollama_data:
+    driver: local
+  memory_data:
+    driver: local
+
+networks:
+  memory-net:
+    driver: bridge
